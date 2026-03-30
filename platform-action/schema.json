@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "launchpad.yaml",
+  "description": "Launchpad application configuration",
+  "type": "object",
+  "required": ["name"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "Application name (slug). Used for service names, URLs, etc."
+    },
+    "frontend": {
+      "type": "object",
+      "properties": {
+        "framework": {
+          "type": "string",
+          "enum": ["react", "vue", "next", "static", "none"],
+          "default": "none"
+        },
+        "dir": {
+          "type": "string",
+          "default": "frontend"
+        },
+        "node_version": {
+          "type": "string",
+          "default": "20"
+        }
+      }
+    },
+    "backend": {
+      "type": "object",
+      "properties": {
+        "language": {
+          "type": "string",
+          "enum": ["python", "go", "node", "none"],
+          "default": "none"
+        },
+        "dir": {
+          "type": "string",
+          "default": "backend"
+        },
+        "port": {
+          "type": "integer",
+          "default": 8080
+        },
+        "memory": {
+          "type": "string",
+          "default": "512Mi"
+        },
+        "cpu": {
+          "type": "string",
+          "default": "1"
+        }
+      }
+    },
+    "database": {
+      "oneOf": [
+        { "type": "boolean" },
+        { "type": "string", "enum": ["postgres", "mysql"] }
+      ],
+      "default": false
+    }
+  }
+}

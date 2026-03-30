@@ -1,0 +1,19 @@
+name: "GCP Auth"
+description: "Authenticate to Google Cloud using Workload Identity Federation"
+
+inputs:
+  wif_provider:
+    description: "Full WIF provider resource path"
+    required: true
+  service_account:
+    description: "Platform service account email"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: ${{ inputs.wif_provider }}
+        service_account: ${{ inputs.service_account }}

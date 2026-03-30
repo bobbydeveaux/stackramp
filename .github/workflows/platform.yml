@@ -1,110 +1,59 @@
-name: PaaGA Platform Deploy
+name: Launchpad Platform Deploy
 
 # This is the ONLY workflow file that consuming repos reference.
 # Usage in your repo's .github/workflows/deploy.yml:
 #
 #   jobs:
 #     deploy:
-#       uses: bobbydeveaux/paaga/.github/workflows/platform.yml@main
+#       uses: bobbydeveaux/launchpad/.github/workflows/platform.yml@main
 #       secrets: inherit
 
 on:
   workflow_call:
     inputs:
-      paaga_config:
-        description: "Path to paaga.yaml (default: paaga.yaml)"
+      config_path:
+        description: "Path to launchpad.yaml (default: launchpad.yaml)"
         type: string
         required: false
-        default: "paaga.yaml"
-      environment:
-        description: "Override environment (default: dev for PRs, dev+prod for main)"
-        type: string
-        required: false
-        default: ""
+        default: "launchpad.yaml"
 
 permissions:
   id-token: write
   contents: read
   pull-requests: write
 
-env:
-  PLATFORM_PROJECT_DEV: bj-platform-dev
-  PLATFORM_PROJECT_PROD: bj-platform-prod
-  PLATFORM_SA_DEV: tf-cicd-sa@bj-platform-dev.iam.gserviceaccount.com
-  PLATFORM_SA_PROD: tf-cicd-sa@bj-platform-prod.iam.gserviceaccount.com
-  PLATFORM_WIF_DEV: projects/TODO/locations/global/workloadIdentityPools/github-actions-pool/providers/github-provider
-  PLATFORM_WIF_PROD: projects/TODO/locations/global/workloadIdentityPools/github-actions-pool/providers/github-provider
-  REGION: europe-west3
-
 jobs:
   # ─────────────────────────────────────────────────────────────────────────────
-  # 1. Parse paaga.yaml and detect what changed
+  # 1. Parse launchpad.yaml and detect what changed
   # ─────────────────────────────────────────────────────────────────────────────
   parse-config:
-    name: Parse paaga.yaml
+    name: Parse launchpad.yaml
     runs-on: ubuntu-latest
     outputs:
-      app_name: ${{ steps.parse.outputs.app_name }}
-      has_frontend: ${{ steps.parse.outputs.has_frontend }}
-      has_backend: ${{ steps.parse.outputs.has_backend }}
-      frontend_dir: ${{ steps.parse.outputs.frontend_dir }}
-      backend_dir: ${{ steps.parse.outputs.backend_dir }}
-      backend_language: ${{ steps.parse.outputs.backend_language }}
-      backend_port: ${{ steps.parse.outputs.backend_port }}
-      frontend_framework: ${{ steps.parse.outputs.frontend_framework }}
-      has_database: ${{ steps.parse.outputs.has_database }}
+      app_name: ${{ steps.config.outputs.app_name }}
+      has_frontend: ${{ steps.config.outputs.has_frontend }}
+      has_backend: ${{ steps.config.outputs.has_backend }}
+      frontend_dir: ${{ steps.config.outputs.frontend_dir }}
+      frontend_framework: ${{ steps.config.outputs.frontend_framework }}
+      backend_dir: ${{ steps.config.outputs.backend_dir }}
+      backend_language: ${{ steps.config.outputs.backend_language }}
+      backend_port: ${{ steps.config.outputs.backend_port }}
+      has_database: ${{ steps.config.outputs.has_database }}
+      provider: ${{ steps.config.outputs.provider }}
       frontend_changed: ${{ steps.changes.outputs.frontend }}
       backend_changed: ${{ steps.changes.outputs.backend }}
+      is_pr: ${{ github.event_name == 'pull_request' }}
 
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # needed for change detection
+          fetch-depth: 0
 
-      - name: Parse paaga.yaml
-        id: parse
-        run: |
-          CONFIG="${{ inputs.paaga_config }}"
-          if [ ! -f "$CONFIG" ]; then
-            echo "❌ $CONFIG not found. Add a paaga.yaml to your repo root."
-            exit 1
-          fi
-          
-          # Install yq for YAML parsing
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
-          
-          APP_NAME=$(yq '.name' "$CONFIG")
-          FRONTEND_FRAMEWORK=$(yq '.frontend.framework // "none"' "$CONFIG")
-          FRONTEND_DIR=$(yq '.frontend.dir // "frontend"' "$CONFIG")
-          BACKEND_LANG=$(yq '.backend.language // "none"' "$CONFIG")
-          BACKEND_DIR=$(yq '.backend.dir // "backend"' "$CONFIG")
-          BACKEND_PORT=$(yq '.backend.port // 8080' "$CONFIG")
-          DATABASE=$(yq '.database // false' "$CONFIG")
-          
-          HAS_FRONTEND="false"
-          [ "$FRONTEND_FRAMEWORK" != "none" ] && HAS_FRONTEND="true"
-          
-          HAS_BACKEND="false"
-          [ "$BACKEND_LANG" != "none" ] && HAS_BACKEND="true"
-          
-          HAS_DATABASE="false"
-          [ "$DATABASE" != "false" ] && HAS_DATABASE="true"
-          
-          echo "app_name=$APP_NAME" >> $GITHUB_OUTPUT
-          echo "has_frontend=$HAS_FRONTEND" >> $GITHUB_OUTPUT
-          echo "has_backend=$HAS_BACKEND" >> $GITHUB_OUTPUT
-          echo "frontend_dir=$FRONTEND_DIR" >> $GITHUB_OUTPUT
-          echo "backend_dir=$BACKEND_DIR" >> $GITHUB_OUTPUT
-          echo "backend_language=$BACKEND_LANG" >> $GITHUB_OUTPUT
-          echo "backend_port=$BACKEND_PORT" >> $GITHUB_OUTPUT
-          echo "frontend_framework=$FRONTEND_FRAMEWORK" >> $GITHUB_OUTPUT
-          echo "has_database=$HAS_DATABASE" >> $GITHUB_OUTPUT
-          
-          echo "📋 App: $APP_NAME"
-          echo "🖥️  Frontend: $FRONTEND_FRAMEWORK ($FRONTEND_DIR)"
-          echo "⚙️  Backend: $BACKEND_LANG ($BACKEND_DIR:$BACKEND_PORT)"
-          echo "🗄️  Database: $DATABASE"
+      - name: Parse config
+        id: config
+        uses: bobbydeveaux/launchpad/platform-action@main
+        with:
+          config_path: ${{ inputs.config_path }}
 
       - name: Detect changes
         id: changes
@@ -112,57 +61,97 @@ jobs:
         with:
           filters: |
             frontend:
-              - '${{ steps.parse.outputs.frontend_dir }}/**'
-              - 'paaga.yaml'
+              - '${{ steps.config.outputs.frontend_dir }}/**'
+              - 'launchpad.yaml'
             backend:
-              - '${{ steps.parse.outputs.backend_dir }}/**'
-              - 'paaga.yaml'
+              - '${{ steps.config.outputs.backend_dir }}/**'
+              - 'launchpad.yaml'
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # 2. Deploy to DEV
+  # 2. Deploy frontend (if changed)
   # ─────────────────────────────────────────────────────────────────────────────
-  deploy-dev:
-    name: Deploy → dev
+  deploy-frontend:
+    name: Frontend
     needs: [parse-config]
     if: |
-      needs.parse-config.outputs.frontend_changed == 'true' ||
-      needs.parse-config.outputs.backend_changed == 'true' ||
-      github.event_name == 'workflow_dispatch'
-    uses: ./.github/workflows/_deploy-env.yml
+      needs.parse-config.outputs.has_frontend == 'true' &&
+      (needs.parse-config.outputs.frontend_changed == 'true' || github.event_name == 'workflow_dispatch')
+    uses: bobbydeveaux/launchpad/.github/workflows/_frontend.yml@main
     secrets: inherit
     with:
       app_name: ${{ needs.parse-config.outputs.app_name }}
-      environment: dev
-      platform_project: bj-platform-dev
-      has_frontend: ${{ needs.parse-config.outputs.has_frontend == 'true' }}
-      has_backend: ${{ needs.parse-config.outputs.has_backend == 'true' }}
       frontend_dir: ${{ needs.parse-config.outputs.frontend_dir }}
       frontend_framework: ${{ needs.parse-config.outputs.frontend_framework }}
-      backend_dir: ${{ needs.parse-config.outputs.backend_dir }}
-      backend_language: ${{ needs.parse-config.outputs.backend_language }}
-      backend_port: ${{ fromJson(needs.parse-config.outputs.backend_port) }}
-      frontend_changed: ${{ needs.parse-config.outputs.frontend_changed == 'true' }}
-      backend_changed: ${{ needs.parse-config.outputs.backend_changed == 'true' }}
+      environment: ${{ github.event_name == 'pull_request' && 'preview' || 'dev' }}
+      platform_project: ${{ vars.LAUNCHPAD_PROJECT }}
+      region: ${{ vars.LAUNCHPAD_REGION || 'europe-west1' }}
+      wif_provider: ${{ vars.LAUNCHPAD_WIF_PROVIDER }}
+      service_account: ${{ vars.LAUNCHPAD_SA_EMAIL }}
+      is_pr: ${{ github.event_name == 'pull_request' }}
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # 3. Deploy to PROD (main branch only, after DEV)
+  # 3. Deploy backend (if changed)
   # ─────────────────────────────────────────────────────────────────────────────
-  deploy-prod:
-    name: Deploy → prod
-    needs: [parse-config, deploy-dev]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    uses: ./.github/workflows/_deploy-env.yml
+  deploy-backend:
+    name: Backend
+    needs: [parse-config]
+    if: |
+      needs.parse-config.outputs.has_backend == 'true' &&
+      (needs.parse-config.outputs.backend_changed == 'true' || github.event_name == 'workflow_dispatch')
+    uses: bobbydeveaux/launchpad/.github/workflows/_backend.yml@main
     secrets: inherit
     with:
       app_name: ${{ needs.parse-config.outputs.app_name }}
-      environment: prod
-      platform_project: bj-platform-prod
-      has_frontend: ${{ needs.parse-config.outputs.has_frontend == 'true' }}
-      has_backend: ${{ needs.parse-config.outputs.has_backend == 'true' }}
-      frontend_dir: ${{ needs.parse-config.outputs.frontend_dir }}
-      frontend_framework: ${{ needs.parse-config.outputs.frontend_framework }}
       backend_dir: ${{ needs.parse-config.outputs.backend_dir }}
       backend_language: ${{ needs.parse-config.outputs.backend_language }}
       backend_port: ${{ fromJson(needs.parse-config.outputs.backend_port) }}
-      frontend_changed: ${{ needs.parse-config.outputs.frontend_changed == 'true' }}
-      backend_changed: ${{ needs.parse-config.outputs.backend_changed == 'true' }}
+      environment: ${{ github.event_name == 'pull_request' && 'preview' || 'dev' }}
+      platform_project: ${{ vars.LAUNCHPAD_PROJECT }}
+      region: ${{ vars.LAUNCHPAD_REGION || 'europe-west1' }}
+      wif_provider: ${{ vars.LAUNCHPAD_WIF_PROVIDER }}
+      service_account: ${{ vars.LAUNCHPAD_SA_EMAIL }}
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 4. Deploy to PROD (main branch only, after dev succeeds)
+  # ─────────────────────────────────────────────────────────────────────────────
+  deploy-frontend-prod:
+    name: Frontend → prod
+    needs: [parse-config, deploy-frontend]
+    if: |
+      always() &&
+      github.ref == 'refs/heads/main' && github.event_name == 'push' &&
+      needs.parse-config.outputs.has_frontend == 'true' &&
+      (needs.deploy-frontend.result == 'success' || needs.deploy-frontend.result == 'skipped')
+    uses: bobbydeveaux/launchpad/.github/workflows/_frontend.yml@main
+    secrets: inherit
+    with:
+      app_name: ${{ needs.parse-config.outputs.app_name }}
+      frontend_dir: ${{ needs.parse-config.outputs.frontend_dir }}
+      frontend_framework: ${{ needs.parse-config.outputs.frontend_framework }}
+      environment: prod
+      platform_project: ${{ vars.LAUNCHPAD_PROJECT }}
+      region: ${{ vars.LAUNCHPAD_REGION || 'europe-west1' }}
+      wif_provider: ${{ vars.LAUNCHPAD_WIF_PROVIDER }}
+      service_account: ${{ vars.LAUNCHPAD_SA_EMAIL }}
+      is_pr: false
+
+  deploy-backend-prod:
+    name: Backend → prod
+    needs: [parse-config, deploy-backend]
+    if: |
+      always() &&
+      github.ref == 'refs/heads/main' && github.event_name == 'push' &&
+      needs.parse-config.outputs.has_backend == 'true' &&
+      (needs.deploy-backend.result == 'success' || needs.deploy-backend.result == 'skipped')
+    uses: bobbydeveaux/launchpad/.github/workflows/_backend.yml@main
+    secrets: inherit
+    with:
+      app_name: ${{ needs.parse-config.outputs.app_name }}
+      backend_dir: ${{ needs.parse-config.outputs.backend_dir }}
+      backend_language: ${{ needs.parse-config.outputs.backend_language }}
+      backend_port: ${{ fromJson(needs.parse-config.outputs.backend_port) }}
+      environment: prod
+      platform_project: ${{ vars.LAUNCHPAD_PROJECT }}
+      region: ${{ vars.LAUNCHPAD_REGION || 'europe-west1' }}
+      wif_provider: ${{ vars.LAUNCHPAD_WIF_PROVIDER }}
+      service_account: ${{ vars.LAUNCHPAD_SA_EMAIL }}

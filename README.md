@@ -1,59 +1,53 @@
-# PaaGA — Platform as a GitHub Action
+# Launchpad
 
-> You commit code. The platform figures out the rest.
+> You commit code. The platform handles the rest.
+
+Launchpad is an open-source, zero-config deployment platform delivered as a GitHub Action. Developers describe their app in a single YAML file, add one workflow, and push. The platform builds, provisions infrastructure, and deploys — no cloud console, no Terraform, no secrets.
 
 ## The Problem
 
-Every new BobbyJason project repeats the same ritual:
-- Create a new GCP project (x3 — dev/uat/prod)
-- Bootstrap Terraform state buckets
-- Set up Workload Identity Federation for GitHub Actions
-- Wire up Firebase Hosting
-- Configure Artifact Registry
-- Create Cloud Run service
-- Copy 500 lines of workflow YAML and find/replace the project name
+Every new project requires the same bootstrapping ritual:
 
-This is soul-destroying. PaaGA kills it.
+- Create GCP project(s) for dev/prod
+- Set up Terraform state buckets
+- Configure Workload Identity Federation for GitHub Actions
+- Provision Firebase Hosting, Artifact Registry, Cloud Run
+- Write 500+ lines of workflow YAML, find/replacing project names
+- Repeat for every project, every developer
 
----
+**Launchpad kills this entirely.**
 
-## The Vision
+## The Developer Experience
 
-A developer creates a repo with this structure:
+### Step 1: Create your repo
 
 ```
 my-app/
-├── frontend/        ← React / Vite / whatever
-├── backend/         ← Go / Python / Node API
-└── paaga.yaml       ← all the config you'll ever need
+├── frontend/      ← your React/Vite/Next app
+├── backend/       ← your Python/Go/Node API
+└── launchpad.yaml
 ```
 
-`paaga.yaml` looks like:
+### Step 2: Write launchpad.yaml
 
 ```yaml
 name: my-app
-owner: bobbydeveaux
 
 frontend:
-  framework: react    # react | vue | next | static
-  
-backend:
-  language: python    # python | go | node
-  port: 8080
-  
-database: false       # false | postgres | mysql
+  framework: react
 
-platform:
-  region: europe-west3
-  billing_account: XXXXXX-XXXXXX-XXXXXX
-  org_id: ""          # optional
+backend:
+  language: python
+  port: 8080
+
+database: false
 ```
 
-Then in `.github/workflows/deploy.yml` — the **only** workflow file the developer writes:
+### Step 3: Add one workflow file
 
 ```yaml
+# .github/workflows/deploy.yml
 name: Deploy
-
 on:
   push:
     branches: [main]
@@ -61,133 +55,142 @@ on:
 
 jobs:
   deploy:
-    uses: bobbydeveaux/paaga/.github/workflows/platform.yml@main
+    uses: bobbydeveaux/launchpad/.github/workflows/platform.yml@main
     secrets: inherit
 ```
 
-That's it. The platform handles:
-- ✅ Detecting what changed (frontend / backend / both)
-- ✅ Building and testing
-- ✅ Provisioning GCP infra (first time, idempotent after)
-- ✅ Deploying Firebase Hosting (frontend)
-- ✅ Deploying Cloud Run (backend)
-- ✅ Wiring up secrets / env vars
-- ✅ Optional: Cloud SQL, with creds injected automatically
+### Step 4: Push
 
----
+That's it. The platform:
+- Detects what changed (frontend, backend, or both)
+- Builds your app
+- Provisions cloud infrastructure (idempotently)
+- Deploys and returns live URLs
+- On PRs: creates preview deployments with URLs posted as comments
+
+**No GCP console. No Terraform. No secrets. No YAML beyond the above.**
 
 ## Architecture
 
-### Phase 1 — POC (Let's build this now)
-
-Shared infra lives in a **single GCP project** per environment:
-
 ```
-bj-platform-dev
-bj-platform-prod
-```
-
-Each app gets:
-- Firebase Hosting → `<app-name>.web.app` (or custom subdomain)
-- Cloud Run service → `<app-name>-api-<region>.run.app`
-- Namespace isolation via naming convention
-
-No per-app GCP projects. No per-app Terraform bootstrap.
-
-Terraform runs **once** for the platform project itself (done). After that, each new app is just a Cloud Run service + Firebase site added to the existing project.
-
-### Phase 2 — Shared Database
-
-Single Cloud SQL instance per environment. Each app gets its own database + user. Credentials injected into Cloud Run via Secret Manager — the app just reads standard env vars:
-
-```
-DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
+Developer's Repo                  Launchpad                        Cloud
+────────────────                  ────────                         ─────
+launchpad.yaml  ──────►  platform.yml (reusable workflow)
+deploy.yml                       │
+                                 ├── parse config
+                                 ├── detect changes
+                                 ├── build frontend ──────►  Firebase Hosting
+                                 └── build backend  ──────►  Cloud Run
 ```
 
-Developer never touches SQL, never knows the password.
+Platform config lives in GitHub Variables (not secrets):
 
-### Phase 3 — K8s (future)
+| Variable | Example |
+|----------|---------|
+| `LAUNCHPAD_PROVIDER` | `gcp` |
+| `LAUNCHPAD_PROJECT` | `my-platform-dev` |
+| `LAUNCHPAD_REGION` | `europe-west1` |
+| `LAUNCHPAD_WIF_PROVIDER` | `projects/123/locations/global/...` |
+| `LAUNCHPAD_SA_EMAIL` | `launchpad-cicd-sa@project.iam...` |
 
-Migrate Cloud Run → shared GKE cluster. Each app gets its own namespace. RBAC per developer. Same `paaga.yaml` interface, different backend.
+## Quick Start
 
----
+### For Operators (one-time)
+
+```bash
+git clone https://github.com/bobbydeveaux/launchpad
+cd launchpad/providers/gcp/terraform/bootstrap
+cp terraform.tfvars.example terraform.tfvars
+# Edit with your GCP project, region, GitHub org
+terraform init && terraform apply
+# Set the output values as GitHub Variables
+```
+
+See the full [Operator Guide](docs/operator-guide.md).
+
+### For Developers
+
+1. Add `launchpad.yaml` to your repo root ([reference](docs/launchpad-yaml-reference.md))
+2. Add `.github/workflows/deploy.yml` (see above)
+3. Push to `main`
+4. Check the Actions tab for your deploy URL
+
+See the full [Getting Started guide](docs/getting-started.md).
+
+## Multi-Cloud
+
+Launchpad is built around a **provider abstraction**. The developer's `launchpad.yaml` never mentions a cloud provider — that's an operator concern.
+
+```
+providers/
+├── gcp/           ← implemented (v1)
+│   ├── terraform/
+│   └── workflows/
+├── aws/           ← coming soon
+└── interface.md   ← provider contract
+```
+
+Adding AWS support means:
+1. Implementing `providers/aws/`
+2. Setting `LAUNCHPAD_PROVIDER=aws` in GitHub Variables
+3. **Zero changes to any app's `launchpad.yaml`**
+
+See the [Provider Interface](providers/interface.md) for details.
 
 ## Repository Structure
 
 ```
-bobbydeveaux/paaga/
-├── README.md                          ← this file
-├── .github/
-│   └── workflows/
-│       ├── platform.yml               ← the reusable workflow (entry point)
-│       ├── _detect-changes.yml        ← what changed?
-│       ├── _build-frontend.yml        ← build + deploy Firebase Hosting
-│       ├── _build-backend.yml         ← build + deploy Cloud Run
-│       └── _provision-infra.yml       ← terraform plan/apply (idempotent)
-├── terraform/
-│   ├── bootstrap/                     ← one-time platform setup (per-env)
-│   └── platform/                     ← per-app infra module (Cloud Run + Firebase site)
-├── platform-action/                   ← composite action (reads paaga.yaml)
-│   └── action.yml
-└── docs/
-    ├── getting-started.md
-    ├── paaga-yaml-reference.md
-    └── database-guide.md
+bobbydeveaux/launchpad/
+├── README.md
+├── launchpad.yaml.example
+├── .github/workflows/
+│   └── platform.yml              ← public entry point
+├── platform-action/
+│   ├── action.yml                ← config parser
+│   ├── schema.json               ← validation schema
+│   └── dockerfiles/              ← default Dockerfiles
+├── providers/
+│   ├── interface.md              ← provider contract
+│   └── gcp/
+│       ├── terraform/bootstrap/  ← one-time setup
+│       ├── terraform/platform/   ← per-app infra
+│       └── workflows/            ← GCP-specific actions
+├── docs/
+│   ├── PRD.md
+│   ├── HLD.md
+│   ├── getting-started.md
+│   ├── launchpad-yaml-reference.md
+│   └── operator-guide.md
+└── example-app/                  ← working example
 ```
 
----
+## Supported Runtimes
 
-## Getting Started (for a new app)
+| Frontend | Backend |
+|----------|---------|
+| React | Python (uvicorn) |
+| Vue | Go |
+| Next.js | Node.js |
+| Static HTML | |
 
-1. **One-time**: Platform admin runs bootstrap terraform for `bj-platform-dev` / `bj-platform-prod`
-2. Developer creates a new repo
-3. Adds `paaga.yaml` at root
-4. Adds this to `.github/workflows/deploy.yml`:
-
-```yaml
-jobs:
-  deploy:
-    uses: bobbydeveaux/paaga/.github/workflows/platform.yml@main
-    secrets: inherit
-```
-
-5. Pushes to `main` → platform detects it's a new app, provisions automatically, deploys
-
----
-
-## vs "just copy fanvote"
-
-| | Copy fanvote | PaaGA |
-|---|---|---|
-| New app setup time | ~2 hours | ~5 minutes |
-| Files to copy/edit | ~15 workflow + TF files | 1 workflow file + paaga.yaml |
-| Per-app GCP project | Yes (x3 = dev/uat/prod) | No — shared platform project |
-| Terraform bootstrap per app | Yes | No |
-| WIF setup per app | Yes | No — platform SA does it all |
-| Works for toucanberry devs | No | Yes |
-
----
-
-## Name
-
-PaaGA = **P**latform **a**s **a** **G**itHub **A**ction
-
-Alternative names considered:
-- **Launchpad** — clean, implies "launch your app"
-- **Runway** — you taxi, then take off
-- **Plinth** — thing you put stuff on (very British)
-
-Bobby's call 🙂
-
----
+Custom `Dockerfile` in your backend directory is always supported as an override.
 
 ## Status
 
-- [ ] POC scoping (this doc)
-- [ ] Platform terraform bootstrap (`bj-platform-dev`)  
-- [ ] Reusable workflow — frontend path (Firebase Hosting)
-- [ ] Reusable workflow — backend path (Cloud Run)
-- [ ] `paaga.yaml` schema + parser
-- [ ] First example app wired up
-- [ ] Database injection (Phase 2)
-- [ ] Toucanberry pilot
+- [x] Platform architecture and provider abstraction
+- [x] GCP bootstrap Terraform (WIF, Artifact Registry, IAM)
+- [x] GCP per-app Terraform (Cloud Run, Firebase Hosting)
+- [x] Reusable workflow — frontend deploy (Firebase Hosting)
+- [x] Reusable workflow — backend deploy (Cloud Run)
+- [x] Config parser + validation
+- [x] Default Dockerfiles (Python, Go, Node)
+- [x] Change detection (only deploy what changed)
+- [x] PR preview deployments
+- [ ] Database injection (Cloud SQL)
+- [ ] AWS provider
+- [ ] Custom domain support
+- [ ] Deploy status dashboard
+
+## License
+
+MIT

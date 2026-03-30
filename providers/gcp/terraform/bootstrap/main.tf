@@ -1,10 +1,10 @@
-# PaaGA Platform Bootstrap
+# Launchpad Platform Bootstrap
 # Run ONCE per environment (dev / prod) to set up the shared platform project.
 # After this, individual apps require NO terraform — they just push code.
 
 locals {
-  platform_project = var.platform_project  # e.g. bj-platform-dev
-  region           = "europe-west3"
+  platform_project = var.platform_project
+  region           = var.region
 }
 
 provider "google" {
@@ -34,13 +34,13 @@ resource "google_project_service" "apis" {
 }
 
 # ── Artifact Registry ─────────────────────────────────────────────────────────
-# All apps share one registry: paaga-images/<app-name>:<sha>
+# All apps share one registry: launchpad-images/<app-name>:<sha>
 
-resource "google_artifact_registry_repository" "paaga_images" {
+resource "google_artifact_registry_repository" "launchpad_images" {
   location      = local.region
-  repository_id = "paaga-images"
+  repository_id = "launchpad-images"
   format        = "DOCKER"
-  description   = "PaaGA shared container registry"
+  description   = "Launchpad shared container registry"
   depends_on    = [google_project_service.apis]
 }
 
@@ -48,8 +48,8 @@ resource "google_artifact_registry_repository" "paaga_images" {
 # This SA is used by ALL apps' GitHub Actions — no per-app SA needed
 
 resource "google_service_account" "platform_cicd" {
-  account_id   = "platform-cicd-sa"
-  display_name = "PaaGA Platform CI/CD"
+  account_id   = "launchpad-cicd-sa"
+  display_name = "Launchpad Platform CI/CD"
   description  = "Shared SA for all app deployments via GitHub Actions"
 }
 
@@ -61,6 +61,7 @@ resource "google_project_iam_member" "platform_roles" {
     "roles/secretmanager.admin",
     "roles/iam.serviceAccountUser",
     "roles/cloudsql.admin",
+    "roles/storage.admin",
   ])
 
   project = local.platform_project
@@ -72,8 +73,8 @@ resource "google_project_iam_member" "platform_roles" {
 # ONE pool for the whole platform — all repos in the org can use it
 
 resource "google_iam_workload_identity_pool" "github" {
-  workload_identity_pool_id = "github-actions-pool"
-  display_name              = "GitHub Actions"
+  workload_identity_pool_id = "launchpad-github-pool"
+  display_name              = "Launchpad GitHub Actions"
   depends_on                = [google_project_service.apis]
 }
 
@@ -87,7 +88,6 @@ resource "google_iam_workload_identity_pool_provider" "github" {
     "attribute.repository_owner" = "assertion.repository_owner"
   }
 
-  # Allow any repo owned by the configured GitHub owner
   attribute_condition = "attribute.repository_owner == '${var.github_owner}'"
 
   oidc {
@@ -95,7 +95,6 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   }
 }
 
-# Bind platform SA to the WIF pool (all repos in org can assume it)
 resource "google_service_account_iam_member" "wif_binding" {
   service_account_id = google_service_account.platform_cicd.name
   role               = "roles/iam.workloadIdentityUser"
@@ -115,21 +114,3 @@ resource "google_storage_bucket" "tf_state" {
 
   uniform_bucket_level_access = true
 }
-
-# ── Cloud SQL (Phase 2 — shared DB instance) ──────────────────────────────────
-# Uncomment when you're ready to add database support
-
-# resource "google_sql_database_instance" "platform" {
-#   name             = "platform-db"
-#   database_version = "POSTGRES_15"
-#   region           = local.region
-#
-#   settings {
-#     tier      = "db-f1-micro"
-#     edition   = "ENTERPRISE"
-#
-#     backup_configuration {
-#       enabled = true
-#     }
-#   }
-# }

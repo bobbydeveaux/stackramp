@@ -1,5 +1,4 @@
-name: hello-paaga
-owner: bobbydeveaux
+name: hello-launchpad
 
 frontend:
   framework: react

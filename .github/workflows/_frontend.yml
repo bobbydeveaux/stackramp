@@ -1,0 +1,117 @@
+name: "Deploy Frontend (GCP)"
+
+on:
+  workflow_call:
+    inputs:
+      app_name:
+        type: string
+        required: true
+      frontend_dir:
+        type: string
+        required: true
+        default: frontend
+      frontend_framework:
+        type: string
+        required: true
+        default: react
+      environment:
+        type: string
+        required: true
+      platform_project:
+        type: string
+        required: true
+      region:
+        type: string
+        required: true
+        default: europe-west1
+      wif_provider:
+        type: string
+        required: true
+      service_account:
+        type: string
+        required: true
+      is_pr:
+        type: string
+        required: false
+        default: "false"
+    outputs:
+      url:
+        description: "Deployed frontend URL"
+        value: ${{ jobs.deploy.outputs.url }}
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  deploy:
+    name: Firebase Hosting
+    runs-on: ubuntu-latest
+    outputs:
+      url: ${{ steps.deploy.outputs.url || steps.deploy-preview.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: bobbydeveaux/launchpad/providers/gcp/workflows/auth@main
+        with:
+          wif_provider: ${{ inputs.wif_provider }}
+          service_account: ${{ inputs.service_account }}
+
+      - name: Detect Node version
+        id: node-version
+        run: |
+          if [ -f "${{ inputs.frontend_dir }}/.nvmrc" ]; then
+            echo "version=$(cat ${{ inputs.frontend_dir }}/.nvmrc)" >> $GITHUB_OUTPUT
+          else
+            echo "version=20" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.node-version.outputs.version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.frontend_dir }}/package-lock.json
+
+      - name: Install & Build
+        run: |
+          cd ${{ inputs.frontend_dir }}
+          npm ci
+          npm run build
+
+      - name: Deploy to live channel
+        if: inputs.is_pr != 'true'
+        id: deploy
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ github.token }}
+          firebaseServiceAccount: ""
+          channelId: live
+          projectId: ${{ inputs.platform_project }}
+          target: ${{ inputs.app_name }}-${{ inputs.environment }}
+
+      - name: Deploy to preview channel
+        if: inputs.is_pr == 'true'
+        id: deploy-preview
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ github.token }}
+          firebaseServiceAccount: ""
+          channelId: pr-${{ github.event.pull_request.number }}
+          projectId: ${{ inputs.platform_project }}
+          target: ${{ inputs.app_name }}-${{ inputs.environment }}
+
+      - name: Comment preview URL on PR
+        if: inputs.is_pr == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const url = '${{ steps.deploy-preview.outputs.url }}';
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `🚀 **${{ inputs.app_name }}** frontend preview deployed!\n\n🔗 ${url}`
+            });

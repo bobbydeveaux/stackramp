@@ -6,9 +6,9 @@ on:
   pull_request:
 
 # This is the ONLY file a developer needs to add.
-# Everything else is handled by the PaaGA platform.
+# Everything else is handled by the Launchpad platform.
 
 jobs:
   deploy:
-    uses: bobbydeveaux/paaga/.github/workflows/platform.yml@main
+    uses: bobbydeveaux/launchpad/.github/workflows/platform.yml@main
     secrets: inherit
