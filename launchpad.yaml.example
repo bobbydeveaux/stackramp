@@ -1,0 +1,29 @@
+# paaga.yaml — drop this in your repo root
+# Full reference: https://github.com/bobbydeveaux/paaga/docs/paaga-yaml-reference.md
+
+name: my-app           # used for Cloud Run service name, Firebase site ID, etc.
+owner: bobbydeveaux    # GitHub org or username (used for WIF, IAM bindings)
+
+frontend:
+  framework: react     # react | vue | next | static | none
+  dir: frontend        # directory containing your frontend code (default: frontend)
+  node_version: "20"   # optional, defaults to 20
+
+backend:
+  language: python     # python | go | node | none
+  dir: backend         # directory containing your backend code (default: backend)
+  port: 8080
+  memory: 512Mi        # Cloud Run memory (default: 512Mi)
+  cpu: "1"             # Cloud Run CPU (default: 1)
+
+database: false        # false | postgres | mysql
+# When database is set, your app automatically receives:
+#   DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD via Secret Manager
+
+platform:
+  region: europe-west3
+  billing_account: ""  # Required on first deploy of a new platform env
+  org_id: ""           # Optional — leave blank for personal GCP
+  environments:
+    - dev              # always present
+    # - prod           # uncomment when you're ready for production
