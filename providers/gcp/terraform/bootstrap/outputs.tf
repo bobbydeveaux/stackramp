@@ -28,11 +28,6 @@ output "artifact_registry_url" {
   value       = "${google_artifact_registry_repository.launchpad_images.location}-docker.pkg.dev/${var.platform_project}/${google_artifact_registry_repository.launchpad_images.repository_id}"
 }
 
-output "tf_state_bucket" {
-  description = "GCS bucket for per-app Terraform state"
-  value       = google_storage_bucket.tf_state.name
-}
-
 output "github_variables_summary" {
   description = "Copy these values to your GitHub org/repo Variables"
   value = <<-EOT
@@ -45,8 +40,8 @@ output "github_variables_summary" {
     │ LAUNCHPAD_PROVIDER     = gcp                                       │
     │ LAUNCHPAD_PROJECT      = ${var.platform_project}
     │ LAUNCHPAD_REGION       = ${var.region}
-    │ LAUNCHPAD_WIF_PROVIDER = <see launchpad_wif_provider output>       │
-    │ LAUNCHPAD_SA_EMAIL     = <see launchpad_sa_email output>           │
+    │ LAUNCHPAD_WIF_PROVIDER = ${google_iam_workload_identity_pool_provider.github.name}
+    │ LAUNCHPAD_SA_EMAIL     = ${google_service_account.platform_cicd.email}
     │                                                                    │
     └──────────────────────────────────────────────────────────────────────┘
 

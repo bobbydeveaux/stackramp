@@ -1,0 +1,5 @@
+platform_project = "my-platform-dev"
+github_owner     = "my-github-org"
+environment      = "dev"
+region           = "europe-west1"
+# billing_account = "XXXXXX-XXXXXX-XXXXXX"  # optional
