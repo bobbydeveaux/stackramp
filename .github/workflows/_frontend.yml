@@ -34,6 +34,10 @@ on:
         type: string
         required: false
         default: "false"
+      backend_url:
+        type: string
+        required: false
+        default: ""
     outputs:
       url:
         description: "Deployed frontend URL"
@@ -76,6 +80,8 @@ jobs:
           cache-dependency-path: "**/package-lock.json"
 
       - name: Install & Build
+        env:
+          VITE_API_URL: ${{ inputs.backend_url }}
         run: |
           cd ${{ inputs.frontend_dir }}
           npm ci

@@ -78,6 +78,9 @@ jobs:
     name: Provision infrastructure
     runs-on: ubuntu-latest
     needs: [parse-config]
+    outputs:
+      backend_url_dev: ${{ steps.tf-out-dev.outputs.backend_url }}
+      backend_url_prod: ${{ steps.tf-out-prod.outputs.backend_url }}
     steps:
       - name: Checkout Launchpad platform
         uses: actions/checkout@v4
@@ -110,18 +113,34 @@ jobs:
             -var="platform_project=${{ vars.LAUNCHPAD_PROJECT }}" \
             -var="region=${{ vars.LAUNCHPAD_REGION }}"
 
-      - name: Terraform apply (prod — main branch only)
+      - name: Capture dev backend URL
+        id: tf-out-dev
+        working-directory: .launchpad/providers/gcp/terraform/platform
+        run: echo "backend_url=$(terraform output -raw backend_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+
+      - name: Terraform init (prod)
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         working-directory: .launchpad/providers/gcp/terraform/platform
         run: |
           terraform init -reconfigure \
             -backend-config="bucket=${{ vars.LAUNCHPAD_PROJECT }}-tf-state" \
             -backend-config="prefix=${{ needs.parse-config.outputs.app_name }}-prod"
+
+      - name: Terraform apply (prod — main branch only)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        working-directory: .launchpad/providers/gcp/terraform/platform
+        run: |
           terraform apply -auto-approve \
             -var="app_name=${{ needs.parse-config.outputs.app_name }}" \
             -var="environment=prod" \
             -var="platform_project=${{ vars.LAUNCHPAD_PROJECT }}" \
             -var="region=${{ vars.LAUNCHPAD_REGION }}"
+
+      - name: Capture prod backend URL
+        id: tf-out-prod
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        working-directory: .launchpad/providers/gcp/terraform/platform
+        run: echo "backend_url=$(terraform output -raw backend_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 3. Deploy frontend (if changed)
@@ -144,6 +163,7 @@ jobs:
       wif_provider: ${{ vars.LAUNCHPAD_WIF_PROVIDER }}
       service_account: ${{ vars.LAUNCHPAD_SA_EMAIL }}
       is_pr: ${{ github.event_name == 'pull_request' }}
+      backend_url: ${{ needs.provision.outputs.backend_url_dev }}
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 3. Deploy backend (if changed)
@@ -172,7 +192,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────────
   deploy-frontend-prod:
     name: Frontend → prod
-    needs: [parse-config, deploy-frontend]
+    needs: [parse-config, provision, deploy-frontend]
     if: |
       always() &&
       github.ref == 'refs/heads/main' && github.event_name == 'push' &&
@@ -190,6 +210,7 @@ jobs:
       wif_provider: ${{ vars.LAUNCHPAD_WIF_PROVIDER }}
       service_account: ${{ vars.LAUNCHPAD_SA_EMAIL }}
       is_pr: false
+      backend_url: ${{ needs.provision.outputs.backend_url_prod }}
 
   deploy-backend-prod:
     name: Backend → prod
