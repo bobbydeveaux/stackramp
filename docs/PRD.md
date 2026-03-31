@@ -1,4 +1,4 @@
-# Launchpad — Product Requirements Document
+# StackRamp — Product Requirements Document
 
 **Version:** 0.1  
 **Status:** Draft  
@@ -76,10 +76,10 @@ This is the **complete** developer experience for a new app:
 my-app/
 ├── frontend/      ← your React/Vite/Next app
 ├── backend/       ← your Python/Go/Node API
-└── launchpad.yaml ← the only config you write
+└── stackramp.yaml ← the only config you write
 ```
 
-### Step 2: Write launchpad.yaml
+### Step 2: Write stackramp.yaml
 ```yaml
 name: my-app
 
@@ -104,7 +104,7 @@ on:
 
 jobs:
   deploy:
-    uses: bobbydeveaux/launchpad/.github/workflows/platform.yml@main
+    uses: bobbydeveaux/stackramp/.github/workflows/platform.yml@main
     secrets: inherit
 ```
 
@@ -122,10 +122,10 @@ That's it. The platform:
 
 ## 5. Configuration Reference
 
-`launchpad.yaml` is the single source of truth for an app's platform requirements.
+`stackramp.yaml` is the single source of truth for an app's platform requirements.
 
 ```yaml
-# launchpad.yaml
+# stackramp.yaml
 
 name: my-app           # slug — used for service names, URLs, etc.
 
@@ -150,7 +150,7 @@ provider:
   region: europe-west1
 ```
 
-> **Key principle**: The `provider` block is optional and operator-managed. A developer deploying to a GCP-backed platform writes exactly the same `launchpad.yaml` as one deploying to an AWS-backed platform. If support is added for AWS in the future, existing `launchpad.yaml` files do not change.
+> **Key principle**: The `provider` block is optional and operator-managed. A developer deploying to a GCP-backed platform writes exactly the same `stackramp.yaml` as one deploying to an AWS-backed platform. If support is added for AWS in the future, existing `stackramp.yaml` files do not change.
 
 ---
 
@@ -159,9 +159,9 @@ provider:
 Someone (Bobby, or a Toucanberry admin) runs the bootstrap once to set up a platform environment:
 
 ```bash
-# Clone launchpad
-git clone https://github.com/bobbydeveaux/launchpad
-cd launchpad/terraform/bootstrap
+# Clone stackramp
+git clone https://github.com/bobbydeveaux/stackramp
+cd stackramp/terraform/bootstrap
 
 # Configure
 cp terraform.tfvars.example terraform.tfvars
@@ -180,11 +180,11 @@ This provisions:
 Output: a set of **non-secret** platform variables that platform users add to their GitHub org/repo variables:
 
 ```
-LAUNCHPAD_PROVIDER=gcp
-LAUNCHPAD_PROJECT=bj-platform-dev
-LAUNCHPAD_WIF_PROVIDER=projects/123/locations/global/...
-LAUNCHPAD_SERVICE_ACCOUNT=launchpad-sa@bj-platform-dev.iam...
-LAUNCHPAD_REGION=europe-west1
+STACKRAMP_PROVIDER=gcp
+STACKRAMP_PROJECT=bj-platform-dev
+STACKRAMP_WIF_PROVIDER=projects/123/locations/global/...
+STACKRAMP_SERVICE_ACCOUNT=stackramp-sa@bj-platform-dev.iam...
+STACKRAMP_REGION=europe-west1
 ```
 
 These are not secrets. They are configuration. They can live in GitHub org variables or be hardcoded in a fork.
@@ -195,7 +195,7 @@ These are not secrets. They are configuration. They can live in GitHub org varia
 
 ### Design Principle: Cloud Provider is an Implementation Detail
 
-`launchpad.yaml` describes **what** an app needs. The platform decides **where** it runs. This means:
+`stackramp.yaml` describes **what** an app needs. The platform decides **where** it runs. This means:
 
 - A `frontend: react` maps to Firebase Hosting on GCP, S3/CloudFront on AWS, Static Web Apps on Azure
 - A `backend: python` maps to Cloud Run on GCP, App Runner/Lambda on AWS, Container Apps on Azure
@@ -229,8 +229,8 @@ Each provider must implement:
 When AWS support is added:
 1. `providers/aws/` is implemented
 2. Platform operator re-runs bootstrap targeting AWS
-3. Apps using `LAUNCHPAD_PROVIDER=aws` get AWS deployments
-4. **Zero changes to any app's `launchpad.yaml`**
+3. Apps using `STACKRAMP_PROVIDER=aws` get AWS deployments
+4. **Zero changes to any app's `stackramp.yaml`**
 
 ---
 
@@ -239,7 +239,7 @@ When AWS support is added:
 | Metric | Target |
 |--------|--------|
 | New app deploy time (from empty repo) | < 10 minutes |
-| Lines of infra config in app repo | < 30 (launchpad.yaml + deploy.yml) |
+| Lines of infra config in app repo | < 30 (stackramp.yaml + deploy.yml) |
 | Platform bootstrap time (one-time) | < 30 minutes |
 | Supported runtimes at launch | 3 (React, Python, Go) |
 | Toucanberry pilot apps | 2+ |
@@ -286,8 +286,8 @@ When AWS support is added:
 
 ## Appendix: Name
 
-**Launchpad** — every project has one. You build on it. Then you launch.
+**StackRamp** — every project has one. You build on it. Then you launch.
 
-Repo: `bobbydeveaux/launchpad`  
-Config file: `launchpad.yaml`  
-Action: `uses: bobbydeveaux/launchpad/.github/workflows/platform.yml@main`
+Repo: `bobbydeveaux/stackramp`  
+Config file: `stackramp.yaml`  
+Action: `uses: bobbydeveaux/stackramp/.github/workflows/platform.yml@main`

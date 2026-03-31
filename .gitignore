@@ -1,0 +1,11 @@
+# Terraform
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.backup
+**/*.tfvars
+!**/*.tfvars.example
+!**/dev.tfvars.example
+!**/prod.tfvars.example
+**/backend.tf
+**/crash.log
+**/override.tf

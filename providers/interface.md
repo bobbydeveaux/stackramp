@@ -1,6 +1,6 @@
-# Launchpad Provider Interface
+# StackRamp Provider Interface
 
-Each cloud provider must implement the following components to be compatible with the Launchpad platform.
+Each cloud provider must implement the following components to be compatible with the StackRamp platform.
 
 ## Directory Structure
 
@@ -114,11 +114,11 @@ Provisions all shared platform infrastructure for the provider.
 **Required outputs (as GitHub Variables):**
 | Output | GitHub Variable |
 |--------|----------------|
-| Provider name | `LAUNCHPAD_PROVIDER` |
-| Project/account ID | `LAUNCHPAD_PROJECT` |
-| Region | `LAUNCHPAD_REGION` |
-| Identity provider path | `LAUNCHPAD_WIF_PROVIDER` |
-| Service account email | `LAUNCHPAD_SA_EMAIL` |
+| Provider name | `STACKRAMP_PROVIDER` |
+| Project/account ID | `STACKRAMP_PROJECT` |
+| Region | `STACKRAMP_REGION` |
+| Identity provider path | `STACKRAMP_WIF_PROVIDER` |
+| Service account email | `STACKRAMP_SA_EMAIL` |
 
 ### 5. `terraform/platform/` (Per-App Infrastructure)
 

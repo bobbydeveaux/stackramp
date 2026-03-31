@@ -1,11 +1,11 @@
-name: "Launchpad Config Parser"
-description: "Parse and validate launchpad.yaml configuration"
+name: "StackRamp Config Parser"
+description: "Parse and validate stackramp.yaml configuration"
 
 inputs:
   config_path:
-    description: "Path to launchpad.yaml"
+    description: "Path to stackramp.yaml"
     required: false
-    default: "launchpad.yaml"
+    default: "stackramp.yaml"
 
 outputs:
   app_name:
@@ -50,19 +50,19 @@ runs:
           sudo chmod +x /usr/local/bin/yq
         fi
 
-    - name: Parse and validate launchpad.yaml
+    - name: Parse and validate stackramp.yaml
       id: parse
       shell: bash
       run: |
         CONFIG="${{ inputs.config_path }}"
         if [ ! -f "$CONFIG" ]; then
-          echo "::error::$CONFIG not found. Add a launchpad.yaml to your repo root."
+          echo "::error::$CONFIG not found. Add a stackramp.yaml to your repo root."
           exit 1
         fi
 
         APP_NAME=$(yq '.name // ""' "$CONFIG")
         if [ -z "$APP_NAME" ] || [ "$APP_NAME" = "null" ]; then
-          echo "::error::launchpad.yaml must have a 'name' field."
+          echo "::error::stackramp.yaml must have a 'name' field."
           exit 1
         fi
 
@@ -72,7 +72,7 @@ runs:
         BACKEND_DIR=$(yq '.backend.dir // "backend"' "$CONFIG")
         BACKEND_PORT=$(yq '.backend.port // 8080' "$CONFIG")
         DATABASE=$(yq '.database // false' "$CONFIG")
-        PROVIDER="${LAUNCHPAD_PROVIDER:-$(yq '.provider.cloud // "gcp"' "$CONFIG")}"
+        PROVIDER="${STACKRAMP_PROVIDER:-$(yq '.provider.cloud // "gcp"' "$CONFIG")}"
 
         HAS_FRONTEND="false"
         [ "$FRONTEND_FRAMEWORK" != "none" ] && [ "$FRONTEND_FRAMEWORK" != "null" ] && HAS_FRONTEND="true"
@@ -81,7 +81,7 @@ runs:
         [ "$BACKEND_LANG" != "none" ] && [ "$BACKEND_LANG" != "null" ] && HAS_BACKEND="true"
 
         if [ "$HAS_FRONTEND" = "false" ] && [ "$HAS_BACKEND" = "false" ]; then
-          echo "::error::launchpad.yaml must define at least one of frontend or backend."
+          echo "::error::stackramp.yaml must define at least one of frontend or backend."
           exit 1
         fi
 

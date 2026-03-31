@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "launchpad.yaml",
-  "description": "Launchpad application configuration",
+  "title": "stackramp.yaml",
+  "description": "StackRamp application configuration",
   "type": "object",
   "required": ["name"],
   "properties": {

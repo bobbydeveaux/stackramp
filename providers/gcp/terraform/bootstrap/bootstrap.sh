@@ -1,5 +1,5 @@
 #!/bin/bash
-# Launchpad Platform Bootstrap
+# StackRamp Platform Bootstrap
 # Sets up the shared GCP platform project: WIF, Service Account, Artifact Registry, TF state bucket.
 # Run ONCE per environment. After this, apps deploy with zero config.
 #
@@ -43,7 +43,7 @@ PROJECT_ID=$(grep 'platform_project' "$TFVARS_FILE" | cut -d'"' -f2)
 REGION=$(grep 'region' "$TFVARS_FILE" | cut -d'"' -f2)
 GITHUB_OWNER=$(grep 'github_owner' "$TFVARS_FILE" | cut -d'"' -f2)
 
-print_info "Launchpad Platform Bootstrap — ${ENVIRONMENT}"
+print_info "StackRamp Platform Bootstrap — ${ENVIRONMENT}"
 echo "   Project:      $PROJECT_ID"
 echo "   Region:       $REGION"
 echo "   GitHub owner: $GITHUB_OWNER"
@@ -182,11 +182,11 @@ echo
 terraform output -json | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
-keys = ['launchpad_provider','launchpad_project','launchpad_region','launchpad_wif_provider','launchpad_sa_email']
+keys = ['stackramp_provider','stackramp_project','stackramp_region','stackramp_wif_provider','stackramp_sa_email']
 for k in keys:
     if k in data:
         print(f'      {k.upper():<30} = {data[k][\"value\"]}')
 "
 echo
-echo "   2. Add launchpad.yaml + .github/workflows/deploy.yml to your app repo"
+echo "   2. Add stackramp.yaml + .github/workflows/deploy.yml to your app repo"
 echo "   3. Push to main — the platform handles the rest"

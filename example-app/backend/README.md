@@ -2,7 +2,7 @@
 
 This directory would contain your backend application (e.g., a Python FastAPI app).
 
-The Launchpad platform will:
+The StackRamp platform will:
 1. Build a Docker image (using the platform's default Dockerfile or your own)
 2. Push to Artifact Registry
 3. Deploy to Cloud Run

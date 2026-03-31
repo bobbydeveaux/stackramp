@@ -60,14 +60,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Checkout Launchpad platform
+      - name: Checkout StackRamp platform
         uses: actions/checkout@v4
         with:
-          repository: bobbydeveaux/launchpad
-          path: .launchpad
+          repository: bobbydeveaux/stackramp
+          path: .stackramp
 
       - name: Authenticate to Google Cloud
-        uses: bobbydeveaux/launchpad/providers/gcp/workflows/auth@main
+        uses: bobbydeveaux/stackramp/providers/gcp/workflows/auth@main
         with:
           wif_provider: ${{ inputs.wif_provider }}
           service_account: ${{ inputs.service_account }}
@@ -80,7 +80,7 @@ jobs:
 
       - name: Build Docker image
         run: |
-          IMAGE="${{ inputs.region }}-docker.pkg.dev/${{ inputs.platform_project }}/launchpad-images/${{ inputs.app_name }}:${{ github.sha }}"
+          IMAGE="${{ inputs.region }}-docker.pkg.dev/${{ inputs.platform_project }}/stackramp-images/${{ inputs.app_name }}:${{ github.sha }}"
 
           if [ -f "${{ inputs.backend_dir }}/Dockerfile" ]; then
             echo "Using custom Dockerfile from ${{ inputs.backend_dir }}/Dockerfile"
@@ -89,7 +89,7 @@ jobs:
             echo "Using platform Dockerfile for ${{ inputs.backend_language }}"
             docker build \
               -t "$IMAGE" \
-              -f .launchpad/platform-action/dockerfiles/${{ inputs.backend_language }}.Dockerfile \
+              -f .stackramp/platform-action/dockerfiles/${{ inputs.backend_language }}.Dockerfile \
               ${{ inputs.backend_dir }}/
           fi
 

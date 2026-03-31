@@ -1,4 +1,4 @@
-# Getting Started with Launchpad
+# Getting Started with StackRamp
 
 ## For Platform Operators (One-Time Setup)
 
@@ -11,11 +11,11 @@ A platform operator sets up the shared infrastructure once. After that, any deve
 - [gcloud CLI](https://cloud.google.com/sdk/docs/install) installed and authenticated
 - A GitHub org or user account
 
-### Step 1: Clone Launchpad
+### Step 1: Clone StackRamp
 
 ```bash
-git clone https://github.com/bobbydeveaux/launchpad
-cd launchpad/providers/gcp/terraform/bootstrap
+git clone https://github.com/bobbydeveaux/stackramp
+cd stackramp/providers/gcp/terraform/bootstrap
 ```
 
 ### Step 2: Configure
@@ -51,11 +51,11 @@ Terraform outputs the values you need. Set these as **GitHub Variables** (not se
 
 | Variable | Example |
 |----------|---------|
-| `LAUNCHPAD_PROVIDER` | `gcp` |
-| `LAUNCHPAD_PROJECT` | `my-platform-dev` |
-| `LAUNCHPAD_REGION` | `europe-west1` |
-| `LAUNCHPAD_WIF_PROVIDER` | `projects/123/locations/global/workloadIdentityPools/launchpad-github-pool/providers/github-provider` |
-| `LAUNCHPAD_SA_EMAIL` | `launchpad-cicd-sa@my-platform-dev.iam.gserviceaccount.com` |
+| `STACKRAMP_PROVIDER` | `gcp` |
+| `STACKRAMP_PROJECT` | `my-platform-dev` |
+| `STACKRAMP_REGION` | `europe-west1` |
+| `STACKRAMP_WIF_PROVIDER` | `projects/123/locations/global/workloadIdentityPools/stackramp-github-pool/providers/github-provider` |
+| `STACKRAMP_SA_EMAIL` | `stackramp-cicd-sa@my-platform-dev.iam.gserviceaccount.com` |
 
 Go to: GitHub → Settings → Secrets and variables → Actions → Variables
 
@@ -69,10 +69,10 @@ Go to: GitHub → Settings → Secrets and variables → Actions → Variables
 my-app/
 ├── frontend/      ← your React/Vite/Next app
 ├── backend/       ← your Python/Go/Node API
-└── launchpad.yaml ← the only config you write
+└── stackramp.yaml ← the only config you write
 ```
 
-### Step 2: Write launchpad.yaml
+### Step 2: Write stackramp.yaml
 
 ```yaml
 name: my-app
@@ -100,7 +100,7 @@ on:
 
 jobs:
   deploy:
-    uses: bobbydeveaux/launchpad/.github/workflows/platform.yml@main
+    uses: bobbydeveaux/stackramp/.github/workflows/platform.yml@main
     secrets: inherit
 ```
 
@@ -113,7 +113,7 @@ git push
 ```
 
 That's it. The platform will:
-1. Parse your `launchpad.yaml`
+1. Parse your `stackramp.yaml`
 2. Detect what changed
 3. Build and deploy your frontend and/or backend
 4. Return live URLs

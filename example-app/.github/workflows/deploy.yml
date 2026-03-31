@@ -6,7 +6,7 @@ on:
   pull_request:
 
 # This is the ONLY file a developer needs to add.
-# Everything else is handled by the Launchpad platform.
+# Everything else is handled by the StackRamp platform.
 
 jobs:
   deploy:
@@ -14,5 +14,5 @@ jobs:
       id-token: write       # required for WIF / GCP auth
       contents: read        # required to checkout code
       pull-requests: write  # required to post PR preview URLs
-    uses: bobbydeveaux/launchpad/.github/workflows/platform.yml@main
+    uses: bobbydeveaux/stackramp/.github/workflows/platform.yml@main
     secrets: inherit

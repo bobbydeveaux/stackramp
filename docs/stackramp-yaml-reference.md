@@ -1,6 +1,6 @@
-# launchpad.yaml Reference
+# stackramp.yaml Reference
 
-`launchpad.yaml` is the single configuration file that describes your application to the Launchpad platform. Place it in your repository root.
+`stackramp.yaml` is the single configuration file that describes your application to the StackRamp platform. Place it in your repository root.
 
 ## Full Example
 
@@ -150,14 +150,14 @@ Whether the app needs a managed database. When enabled (Phase 2), the platform w
 
 ---
 
-## What NOT to Put in launchpad.yaml
+## What NOT to Put in stackramp.yaml
 
 The following are **platform operator concerns**, not app developer concerns:
 
-- Cloud provider (set via `LAUNCHPAD_PROVIDER` GitHub Variable)
-- GCP project / AWS account (set via `LAUNCHPAD_PROJECT`)
-- Region (set via `LAUNCHPAD_REGION`)
-- Service account / IAM (set via `LAUNCHPAD_SA_EMAIL`)
-- WIF / OIDC configuration (set via `LAUNCHPAD_WIF_PROVIDER`)
+- Cloud provider (set via `STACKRAMP_PROVIDER` GitHub Variable)
+- GCP project / AWS account (set via `STACKRAMP_PROJECT`)
+- Region (set via `STACKRAMP_REGION`)
+- Service account / IAM (set via `STACKRAMP_SA_EMAIL`)
+- WIF / OIDC configuration (set via `STACKRAMP_WIF_PROVIDER`)
 
-This separation means your `launchpad.yaml` works identically whether the platform runs on GCP, AWS, or Azure.
+This separation means your `stackramp.yaml` works identically whether the platform runs on GCP, AWS, or Azure.

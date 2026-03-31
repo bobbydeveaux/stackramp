@@ -1,4 +1,4 @@
-name: Launchpad Platform Deploy
+name: StackRamp Platform Deploy
 
 # This is the ONLY workflow file that consuming repos reference.
 # Usage in your repo's .github/workflows/deploy.yml:
@@ -9,17 +9,17 @@ name: Launchpad Platform Deploy
 #         id-token: write       # required for WIF / GCP auth
 #         contents: read        # required to checkout code
 #         pull-requests: write  # required to post PR preview URLs
-#       uses: bobbydeveaux/launchpad/.github/workflows/platform.yml@main
+#       uses: bobbydeveaux/stackramp/.github/workflows/platform.yml@main
 #       secrets: inherit
 
 on:
   workflow_call:
     inputs:
       config_path:
-        description: "Path to launchpad.yaml (default: launchpad.yaml)"
+        description: "Path to stackramp.yaml (default: stackramp.yaml)"
         type: string
         required: false
-        default: "launchpad.yaml"
+        default: "stackramp.yaml"
 
 permissions:
   id-token: write
@@ -28,10 +28,10 @@ permissions:
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────────────
-  # 1. Parse launchpad.yaml and detect what changed
+  # 1. Parse stackramp.yaml and detect what changed
   # ─────────────────────────────────────────────────────────────────────────────
   parse-config:
-    name: Parse launchpad.yaml
+    name: Parse stackramp.yaml
     runs-on: ubuntu-latest
     outputs:
       app_name: ${{ steps.config.outputs.app_name }}
@@ -55,7 +55,7 @@ jobs:
 
       - name: Parse config
         id: config
-        uses: bobbydeveaux/launchpad/platform-action@main
+        uses: bobbydeveaux/stackramp/platform-action@main
         with:
           config_path: ${{ inputs.config_path }}
 
@@ -66,10 +66,10 @@ jobs:
           filters: |
             frontend:
               - '${{ steps.config.outputs.frontend_dir }}/**'
-              - 'launchpad.yaml'
+              - 'stackramp.yaml'
             backend:
               - '${{ steps.config.outputs.backend_dir }}/**'
-              - 'launchpad.yaml'
+              - 'stackramp.yaml'
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 2. Provision app infrastructure (idempotent)
@@ -82,64 +82,64 @@ jobs:
       backend_url_dev: ${{ steps.tf-out-dev.outputs.backend_url }}
       backend_url_prod: ${{ steps.tf-out-prod.outputs.backend_url }}
     steps:
-      - name: Checkout Launchpad platform
+      - name: Checkout StackRamp platform
         uses: actions/checkout@v4
         with:
-          repository: bobbydeveaux/launchpad
-          path: .launchpad
+          repository: bobbydeveaux/stackramp
+          path: .stackramp
 
       - name: Authenticate to Google Cloud
-        uses: bobbydeveaux/launchpad/providers/gcp/workflows/auth@main
+        uses: bobbydeveaux/stackramp/providers/gcp/workflows/auth@main
         with:
-          wif_provider: ${{ vars.LAUNCHPAD_WIF_PROVIDER }}
-          service_account: ${{ vars.LAUNCHPAD_SA_EMAIL }}
+          wif_provider: ${{ vars.STACKRAMP_WIF_PROVIDER }}
+          service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
       - name: Terraform init
-        working-directory: .launchpad/providers/gcp/terraform/platform
+        working-directory: .stackramp/providers/gcp/terraform/platform
         run: |
           terraform init \
-            -backend-config="bucket=${{ vars.LAUNCHPAD_PROJECT }}-tf-state" \
+            -backend-config="bucket=${{ vars.STACKRAMP_PROJECT }}-tf-state" \
             -backend-config="prefix=${{ needs.parse-config.outputs.app_name }}-dev"
 
       - name: Terraform apply (dev)
-        working-directory: .launchpad/providers/gcp/terraform/platform
+        working-directory: .stackramp/providers/gcp/terraform/platform
         run: |
           terraform apply -auto-approve \
             -var="app_name=${{ needs.parse-config.outputs.app_name }}" \
             -var="environment=dev" \
-            -var="platform_project=${{ vars.LAUNCHPAD_PROJECT }}" \
-            -var="region=${{ vars.LAUNCHPAD_REGION }}"
+            -var="platform_project=${{ vars.STACKRAMP_PROJECT }}" \
+            -var="region=${{ vars.STACKRAMP_REGION }}"
 
       - name: Capture dev backend URL
         id: tf-out-dev
-        working-directory: .launchpad/providers/gcp/terraform/platform
+        working-directory: .stackramp/providers/gcp/terraform/platform
         run: echo "backend_url=$(terraform output -raw backend_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
 
       - name: Terraform init (prod)
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        working-directory: .launchpad/providers/gcp/terraform/platform
+        working-directory: .stackramp/providers/gcp/terraform/platform
         run: |
           terraform init -reconfigure \
-            -backend-config="bucket=${{ vars.LAUNCHPAD_PROJECT }}-tf-state" \
+            -backend-config="bucket=${{ vars.STACKRAMP_PROJECT }}-tf-state" \
             -backend-config="prefix=${{ needs.parse-config.outputs.app_name }}-prod"
 
       - name: Terraform apply (prod — main branch only)
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        working-directory: .launchpad/providers/gcp/terraform/platform
+        working-directory: .stackramp/providers/gcp/terraform/platform
         run: |
           terraform apply -auto-approve \
             -var="app_name=${{ needs.parse-config.outputs.app_name }}" \
             -var="environment=prod" \
-            -var="platform_project=${{ vars.LAUNCHPAD_PROJECT }}" \
-            -var="region=${{ vars.LAUNCHPAD_REGION }}"
+            -var="platform_project=${{ vars.STACKRAMP_PROJECT }}" \
+            -var="region=${{ vars.STACKRAMP_REGION }}"
 
       - name: Capture prod backend URL
         id: tf-out-prod
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        working-directory: .launchpad/providers/gcp/terraform/platform
+        working-directory: .stackramp/providers/gcp/terraform/platform
         run: echo "backend_url=$(terraform output -raw backend_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
 
   # ─────────────────────────────────────────────────────────────────────────────
@@ -151,17 +151,17 @@ jobs:
     if: |
       needs.parse-config.outputs.has_frontend == 'true' &&
       (needs.parse-config.outputs.frontend_changed == 'true' || github.event_name == 'workflow_dispatch')
-    uses: bobbydeveaux/launchpad/.github/workflows/_frontend.yml@main
+    uses: bobbydeveaux/stackramp/.github/workflows/_frontend.yml@main
     secrets: inherit
     with:
       app_name: ${{ needs.parse-config.outputs.app_name }}
       frontend_dir: ${{ needs.parse-config.outputs.frontend_dir }}
       frontend_framework: ${{ needs.parse-config.outputs.frontend_framework }}
       environment: ${{ github.event_name == 'pull_request' && 'preview' || 'dev' }}
-      platform_project: ${{ vars.LAUNCHPAD_PROJECT }}
-      region: ${{ vars.LAUNCHPAD_REGION || 'europe-west1' }}
-      wif_provider: ${{ vars.LAUNCHPAD_WIF_PROVIDER }}
-      service_account: ${{ vars.LAUNCHPAD_SA_EMAIL }}
+      platform_project: ${{ vars.STACKRAMP_PROJECT }}
+      region: ${{ vars.STACKRAMP_REGION || 'europe-west1' }}
+      wif_provider: ${{ vars.STACKRAMP_WIF_PROVIDER }}
+      service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
       is_pr: ${{ github.event_name == 'pull_request' }}
       backend_url: ${{ needs.provision.outputs.backend_url_dev }}
 
@@ -174,7 +174,7 @@ jobs:
     if: |
       needs.parse-config.outputs.has_backend == 'true' &&
       (needs.parse-config.outputs.backend_changed == 'true' || github.event_name == 'workflow_dispatch')
-    uses: bobbydeveaux/launchpad/.github/workflows/_backend.yml@main
+    uses: bobbydeveaux/stackramp/.github/workflows/_backend.yml@main
     secrets: inherit
     with:
       app_name: ${{ needs.parse-config.outputs.app_name }}
@@ -182,10 +182,10 @@ jobs:
       backend_language: ${{ needs.parse-config.outputs.backend_language }}
       backend_port: ${{ fromJson(needs.parse-config.outputs.backend_port) }}
       environment: ${{ github.event_name == 'pull_request' && 'preview' || 'dev' }}
-      platform_project: ${{ vars.LAUNCHPAD_PROJECT }}
-      region: ${{ vars.LAUNCHPAD_REGION || 'europe-west1' }}
-      wif_provider: ${{ vars.LAUNCHPAD_WIF_PROVIDER }}
-      service_account: ${{ vars.LAUNCHPAD_SA_EMAIL }}
+      platform_project: ${{ vars.STACKRAMP_PROJECT }}
+      region: ${{ vars.STACKRAMP_REGION || 'europe-west1' }}
+      wif_provider: ${{ vars.STACKRAMP_WIF_PROVIDER }}
+      service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 4. Deploy to PROD (main branch only, after dev succeeds)
@@ -198,17 +198,17 @@ jobs:
       github.ref == 'refs/heads/main' && github.event_name == 'push' &&
       needs.parse-config.outputs.has_frontend == 'true' &&
       needs.deploy-frontend.result == 'success'
-    uses: bobbydeveaux/launchpad/.github/workflows/_frontend.yml@main
+    uses: bobbydeveaux/stackramp/.github/workflows/_frontend.yml@main
     secrets: inherit
     with:
       app_name: ${{ needs.parse-config.outputs.app_name }}
       frontend_dir: ${{ needs.parse-config.outputs.frontend_dir }}
       frontend_framework: ${{ needs.parse-config.outputs.frontend_framework }}
       environment: prod
-      platform_project: ${{ vars.LAUNCHPAD_PROJECT }}
-      region: ${{ vars.LAUNCHPAD_REGION || 'europe-west1' }}
-      wif_provider: ${{ vars.LAUNCHPAD_WIF_PROVIDER }}
-      service_account: ${{ vars.LAUNCHPAD_SA_EMAIL }}
+      platform_project: ${{ vars.STACKRAMP_PROJECT }}
+      region: ${{ vars.STACKRAMP_REGION || 'europe-west1' }}
+      wif_provider: ${{ vars.STACKRAMP_WIF_PROVIDER }}
+      service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
       is_pr: false
       backend_url: ${{ needs.provision.outputs.backend_url_prod }}
 
@@ -220,7 +220,7 @@ jobs:
       github.ref == 'refs/heads/main' && github.event_name == 'push' &&
       needs.parse-config.outputs.has_backend == 'true' &&
       needs.deploy-backend.result == 'success'
-    uses: bobbydeveaux/launchpad/.github/workflows/_backend.yml@main
+    uses: bobbydeveaux/stackramp/.github/workflows/_backend.yml@main
     secrets: inherit
     with:
       app_name: ${{ needs.parse-config.outputs.app_name }}
@@ -228,7 +228,7 @@ jobs:
       backend_language: ${{ needs.parse-config.outputs.backend_language }}
       backend_port: ${{ fromJson(needs.parse-config.outputs.backend_port) }}
       environment: prod
-      platform_project: ${{ vars.LAUNCHPAD_PROJECT }}
-      region: ${{ vars.LAUNCHPAD_REGION || 'europe-west1' }}
-      wif_provider: ${{ vars.LAUNCHPAD_WIF_PROVIDER }}
-      service_account: ${{ vars.LAUNCHPAD_SA_EMAIL }}
+      platform_project: ${{ vars.STACKRAMP_PROJECT }}
+      region: ${{ vars.STACKRAMP_REGION || 'europe-west1' }}
+      wif_provider: ${{ vars.STACKRAMP_WIF_PROVIDER }}
+      service_account: ${{ vars.STACKRAMP_SA_EMAIL }}

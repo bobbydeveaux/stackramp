@@ -58,7 +58,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Authenticate to Google Cloud
-        uses: bobbydeveaux/launchpad/providers/gcp/workflows/auth@main
+        uses: bobbydeveaux/stackramp/providers/gcp/workflows/auth@main
         with:
           wif_provider: ${{ inputs.wif_provider }}
           service_account: ${{ inputs.service_account }}

@@ -1,8 +1,8 @@
-# Launchpad
+# StackRamp
 
 > You commit code. The platform handles the rest.
 
-Launchpad is an open-source, zero-config deployment platform delivered as a GitHub Action. Developers describe their app in a single YAML file, add one workflow, and push. The platform builds, provisions infrastructure, and deploys — no cloud console, no Terraform, no secrets.
+StackRamp is an open-source, zero-config deployment platform delivered as a GitHub Action. Developers describe their app in a single YAML file, add one workflow, and push. The platform builds, provisions infrastructure, and deploys — no cloud console, no Terraform, no secrets.
 
 ## The Problem
 
@@ -15,7 +15,7 @@ Every new project requires the same bootstrapping ritual:
 - Write 500+ lines of workflow YAML, find/replacing project names
 - Repeat for every project, every developer
 
-**Launchpad kills this entirely.**
+**StackRamp kills this entirely.**
 
 ## The Developer Experience
 
@@ -25,10 +25,10 @@ Every new project requires the same bootstrapping ritual:
 my-app/
 ├── frontend/      ← your React/Vite/Next app
 ├── backend/       ← your Python/Go/Node API
-└── launchpad.yaml
+└── stackramp.yaml
 ```
 
-### Step 2: Write launchpad.yaml
+### Step 2: Write stackramp.yaml
 
 ```yaml
 name: my-app
@@ -55,7 +55,7 @@ on:
 
 jobs:
   deploy:
-    uses: bobbydeveaux/launchpad/.github/workflows/platform.yml@main
+    uses: bobbydeveaux/stackramp/.github/workflows/platform.yml@main
     secrets: inherit
 ```
 
@@ -73,9 +73,9 @@ That's it. The platform:
 ## Architecture
 
 ```
-Developer's Repo                  Launchpad                        Cloud
+Developer's Repo                  StackRamp                        Cloud
 ────────────────                  ────────                         ─────
-launchpad.yaml  ──────►  platform.yml (reusable workflow)
+stackramp.yaml  ──────►  platform.yml (reusable workflow)
 deploy.yml                       │
                                  ├── parse config
                                  ├── detect changes
@@ -87,19 +87,19 @@ Platform config lives in GitHub Variables (not secrets):
 
 | Variable | Example |
 |----------|---------|
-| `LAUNCHPAD_PROVIDER` | `gcp` |
-| `LAUNCHPAD_PROJECT` | `my-platform-dev` |
-| `LAUNCHPAD_REGION` | `europe-west1` |
-| `LAUNCHPAD_WIF_PROVIDER` | `projects/123/locations/global/...` |
-| `LAUNCHPAD_SA_EMAIL` | `launchpad-cicd-sa@project.iam...` |
+| `STACKRAMP_PROVIDER` | `gcp` |
+| `STACKRAMP_PROJECT` | `my-platform-dev` |
+| `STACKRAMP_REGION` | `europe-west1` |
+| `STACKRAMP_WIF_PROVIDER` | `projects/123/locations/global/...` |
+| `STACKRAMP_SA_EMAIL` | `stackramp-cicd-sa@project.iam...` |
 
 ## Quick Start
 
 ### For Operators (one-time)
 
 ```bash
-git clone https://github.com/bobbydeveaux/launchpad
-cd launchpad/providers/gcp/terraform/bootstrap
+git clone https://github.com/bobbydeveaux/stackramp
+cd stackramp/providers/gcp/terraform/bootstrap
 cp terraform.tfvars.example terraform.tfvars
 # Edit with your GCP project, region, GitHub org
 terraform init && terraform apply
@@ -110,7 +110,7 @@ See the full [Operator Guide](docs/operator-guide.md).
 
 ### For Developers
 
-1. Add `launchpad.yaml` to your repo root ([reference](docs/launchpad-yaml-reference.md))
+1. Add `stackramp.yaml` to your repo root ([reference](docs/stackramp-yaml-reference.md))
 2. Add `.github/workflows/deploy.yml` (see above)
 3. Push to `main`
 4. Check the Actions tab for your deploy URL
@@ -119,7 +119,7 @@ See the full [Getting Started guide](docs/getting-started.md).
 
 ## Multi-Cloud
 
-Launchpad is built around a **provider abstraction**. The developer's `launchpad.yaml` never mentions a cloud provider — that's an operator concern.
+StackRamp is built around a **provider abstraction**. The developer's `stackramp.yaml` never mentions a cloud provider — that's an operator concern.
 
 ```
 providers/
@@ -132,17 +132,17 @@ providers/
 
 Adding AWS support means:
 1. Implementing `providers/aws/`
-2. Setting `LAUNCHPAD_PROVIDER=aws` in GitHub Variables
-3. **Zero changes to any app's `launchpad.yaml`**
+2. Setting `STACKRAMP_PROVIDER=aws` in GitHub Variables
+3. **Zero changes to any app's `stackramp.yaml`**
 
 See the [Provider Interface](providers/interface.md) for details.
 
 ## Repository Structure
 
 ```
-bobbydeveaux/launchpad/
+bobbydeveaux/stackramp/
 ├── README.md
-├── launchpad.yaml.example
+├── stackramp.yaml.example
 ├── .github/workflows/
 │   └── platform.yml              ← public entry point
 ├── platform-action/
@@ -159,7 +159,7 @@ bobbydeveaux/launchpad/
 │   ├── PRD.md
 │   ├── HLD.md
 │   ├── getting-started.md
-│   ├── launchpad-yaml-reference.md
+│   ├── stackramp-yaml-reference.md
 │   └── operator-guide.md
 └── example-app/                  ← working example
 ```

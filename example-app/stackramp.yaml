@@ -1,4 +1,4 @@
-name: hello-launchpad
+name: hello-stackramp
 
 frontend:
   framework: react

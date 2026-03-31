@@ -1,4 +1,4 @@
-# Launchpad — High Level Design
+# StackRamp — High Level Design
 
 **Version:** 0.1  
 **Status:** Draft  
@@ -9,7 +9,7 @@
 
 ## 1. Overview
 
-Launchpad is a **reusable GitHub Actions platform** that provides zero-config deployment of frontend + backend applications to shared cloud infrastructure. A developer commits code; the platform handles everything else.
+StackRamp is a **reusable GitHub Actions platform** that provides zero-config deployment of frontend + backend applications to shared cloud infrastructure. A developer commits code; the platform handles everything else.
 
 This document covers the architectural decisions, component design, and data flows.
 
@@ -18,16 +18,16 @@ This document covers the architectural decisions, component design, and data flo
 ## 2. Architecture Diagram
 
 ```
-Developer Repo                    Launchpad Repo                     Cloud Platform
+Developer Repo                    StackRamp Repo                     Cloud Platform
 ─────────────────                 ──────────────────────             ──────────────────
 
-launchpad.yaml   ──────────────►  platform.yml (reusable workflow)
+stackramp.yaml   ──────────────►  platform.yml (reusable workflow)
 .github/
   workflows/
     deploy.yml                     │
-    (references launchpad)         ▼
+    (references stackramp)         ▼
                                   parse-config
-                                  (reads launchpad.yaml)
+                                  (reads stackramp.yaml)
                                         │
                           ┌─────────────┼─────────────┐
                           ▼             ▼              ▼
@@ -55,7 +55,7 @@ launchpad.yaml   ──────────────►  platform.yml (re
 
 ## 3. Component Design
 
-### 3.1 launchpad.yaml (App Config)
+### 3.1 stackramp.yaml (App Config)
 
 Lives in the developer's repo root. Describes the app — not the infrastructure.
 
@@ -80,12 +80,12 @@ The `provider` block is intentionally omitted from most app configs. It is injec
 ### 3.2 platform.yml (Reusable Workflow — Entry Point)
 
 ```
-bobbydeveaux/launchpad/.github/workflows/platform.yml
+bobbydeveaux/stackramp/.github/workflows/platform.yml
 ```
 
 This is the **only file the platform exposes publicly**. It is a `workflow_call` reusable workflow that:
 
-1. Reads and validates `launchpad.yaml`
+1. Reads and validates `stackramp.yaml`
 2. Detects which paths changed (frontend/backend/both/neither)
 3. Calls `_provision-infra.yml` if it's a push to main
 4. Conditionally calls `_deploy-frontend.yml` and/or `_deploy-backend.yml`
@@ -93,11 +93,11 @@ This is the **only file the platform exposes publicly**. It is a `workflow_call`
 
 **Inputs (via GitHub Variables — not secrets):**
 ```
-LAUNCHPAD_PROVIDER       gcp
-LAUNCHPAD_PROJECT        bj-platform-dev
-LAUNCHPAD_REGION         europe-west1
-LAUNCHPAD_WIF_PROVIDER   projects/123/locations/global/workloadIdentityPools/...
-LAUNCHPAD_SA_EMAIL       launchpad-sa@bj-platform-dev.iam.gserviceaccount.com
+STACKRAMP_PROVIDER       gcp
+STACKRAMP_PROJECT        bj-platform-dev
+STACKRAMP_REGION         europe-west1
+STACKRAMP_WIF_PROVIDER   projects/123/locations/global/workloadIdentityPools/...
+STACKRAMP_SA_EMAIL       stackramp-sa@bj-platform-dev.iam.gserviceaccount.com
 ```
 
 ---
@@ -105,10 +105,10 @@ LAUNCHPAD_SA_EMAIL       launchpad-sa@bj-platform-dev.iam.gserviceaccount.com
 ### 3.3 Parse Config Action
 
 A composite action (`platform-action/action.yml`) that:
-- Reads `launchpad.yaml` using `yq`
+- Reads `stackramp.yaml` using `yq`
 - Validates required fields
 - Exports all values as step outputs for downstream jobs
-- Determines provider (from env var, falling back to `launchpad.yaml` if present)
+- Determines provider (from env var, falling back to `stackramp.yaml` if present)
 
 ---
 
@@ -119,7 +119,7 @@ Uses `dorny/paths-filter` to determine which jobs to run:
 ```yaml
 - frontend/**  → run frontend deploy
 - backend/**   → run backend deploy
-- launchpad.yaml → run both + infra provision
+- stackramp.yaml → run both + infra provision
 ```
 
 On first deploy (no prior runs), all paths are treated as changed.
@@ -181,7 +181,7 @@ If the app provides its own `Dockerfile` in `backend/`, that is used instead of 
 
 ### 3.8 Database Injection (Phase 2)
 
-When `database: postgres` is set in `launchpad.yaml`:
+When `database: postgres` is set in `stackramp.yaml`:
 
 1. Infra provision creates a database + user on the shared Cloud SQL instance
 2. Password is generated and stored in Secret Manager at `projects/<project>/secrets/<app-name>-db-password`
@@ -245,17 +245,17 @@ Each provider must implement these workflow files with standardised inputs/outpu
 
 ### 4.3 Provider Selection
 
-The active provider is determined at workflow runtime by `LAUNCHPAD_PROVIDER` env var. The `platform.yml` workflow selects the appropriate provider sub-workflows dynamically:
+The active provider is determined at workflow runtime by `STACKRAMP_PROVIDER` env var. The `platform.yml` workflow selects the appropriate provider sub-workflows dynamically:
 
 ```yaml
 - name: Deploy frontend
-  uses: ./providers/${{ env.LAUNCHPAD_PROVIDER }}/workflows/frontend.yml
+  uses: ./providers/${{ env.STACKRAMP_PROVIDER }}/workflows/frontend.yml
 ```
 
 This means adding AWS support requires:
 1. Implementing `providers/aws/`
-2. Adding `LAUNCHPAD_PROVIDER=aws` to the org's GitHub Variables
-3. Zero changes to any app's `launchpad.yaml` or `deploy.yml`
+2. Adding `STACKRAMP_PROVIDER=aws` to the org's GitHub Variables
+3. Zero changes to any app's `stackramp.yaml` or `deploy.yml`
 
 ---
 
@@ -298,11 +298,11 @@ ECR / App Runner / S3
 These are set once at the GitHub org or repo level as **plain variables** (not secrets):
 
 ```
-LAUNCHPAD_PROVIDER=gcp
-LAUNCHPAD_PROJECT=bj-platform-dev
-LAUNCHPAD_WIF_PROVIDER=projects/123456/locations/global/workloadIdentityPools/launchpad/providers/github
-LAUNCHPAD_SA_EMAIL=launchpad-sa@bj-platform-dev.iam.gserviceaccount.com
-LAUNCHPAD_REGION=europe-west1
+STACKRAMP_PROVIDER=gcp
+STACKRAMP_PROJECT=bj-platform-dev
+STACKRAMP_WIF_PROVIDER=projects/123456/locations/global/workloadIdentityPools/stackramp/providers/github
+STACKRAMP_SA_EMAIL=stackramp-sa@bj-platform-dev.iam.gserviceaccount.com
+STACKRAMP_REGION=europe-west1
 ```
 
 These contain no credentials. Knowing them gives you nothing without the OIDC token from the correct repo.
@@ -328,14 +328,14 @@ All platform-managed resources follow a consistent naming scheme to avoid collis
 ## 7. Repository Structure
 
 ```
-bobbydeveaux/launchpad/
+bobbydeveaux/stackramp/
 ├── README.md
 ├── .github/
 │   └── workflows/
 │       └── platform.yml              ← public entry point (workflow_call)
 ├── platform-action/
-│   ├── action.yml                    ← composite action: parse + validate launchpad.yaml
-│   ├── schema.json                   ← launchpad.yaml JSON schema
+│   ├── action.yml                    ← composite action: parse + validate stackramp.yaml
+│   ├── schema.json                   ← stackramp.yaml JSON schema
 │   └── dockerfiles/
 │       ├── python.Dockerfile         ← default Python backend image
 │       ├── go.Dockerfile             ← default Go backend image
@@ -357,11 +357,11 @@ bobbydeveaux/launchpad/
 │   ├── PRD.md
 │   ├── HLD.md                        ← this file
 │   ├── getting-started.md
-│   ├── launchpad-yaml-reference.md
+│   ├── stackramp-yaml-reference.md
 │   ├── operator-guide.md
 │   └── database-guide.md
 └── example-app/
-    ├── launchpad.yaml
+    ├── stackramp.yaml
     ├── .github/
     │   └── workflows/
     │       └── deploy.yml
@@ -380,7 +380,7 @@ bobbydeveaux/launchpad/
 ```
 1. Developer pushes to main
 2. platform.yml triggers
-3. parse-config: reads launchpad.yaml, validates, exports values
+3. parse-config: reads stackramp.yaml, validates, exports values
 4. detect-changes: all paths "changed" (no prior run)
 5. provision-infra:
    a. terraform init (remote state in platform bucket)
@@ -419,7 +419,7 @@ Steps 5 (provision-infra) is still called but Terraform finds nothing to change 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Config format | YAML | Familiar, readable, well-supported in Actions |
-| Config file name | `launchpad.yaml` | Matches repo/project name, consistent |
+| Config file name | `stackramp.yaml` | Matches repo/project name, consistent |
 | Shared vs per-app GCP project | Shared | Eliminates per-app bootstrap overhead |
 | TF state | Shared bucket, per-app prefix | No per-app bucket creation; still isolated state |
 | Secrets | Secret Manager only | No secrets ever in GitHub; industry standard |
@@ -432,7 +432,7 @@ Steps 5 (provision-infra) is still called but Terraform finds nothing to change 
 
 ## 10. Open Questions
 
-- [ ] Should `launchpad.yaml` support multiple backends (e.g., 2 Cloud Run services)?
+- [ ] Should `stackramp.yaml` support multiple backends (e.g., 2 Cloud Run services)?
 - [ ] How do we handle apps that need environment-specific config (dev DB vs prod DB)?
 - [ ] Should custom domains be self-service or operator-managed in v1?
 - [ ] For Toucanberry: shared platform project or each org operator runs their own bootstrap?
