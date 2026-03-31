@@ -60,6 +60,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Checkout Launchpad platform
+        uses: actions/checkout@v4
+        with:
+          repository: bobbydeveaux/launchpad
+          path: .launchpad
+
       - name: Authenticate to Google Cloud
         uses: bobbydeveaux/launchpad/providers/gcp/workflows/auth@main
         with:
@@ -83,7 +89,7 @@ jobs:
             echo "Using platform Dockerfile for ${{ inputs.backend_language }}"
             docker build \
               -t "$IMAGE" \
-              -f platform-action/dockerfiles/${{ inputs.backend_language }}.Dockerfile \
+              -f .launchpad/platform-action/dockerfiles/${{ inputs.backend_language }}.Dockerfile \
               ${{ inputs.backend_dir }}/
           fi
 
