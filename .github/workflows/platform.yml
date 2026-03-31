@@ -5,6 +5,10 @@ name: Launchpad Platform Deploy
 #
 #   jobs:
 #     deploy:
+#       permissions:
+#         id-token: write       # required for WIF / GCP auth
+#         contents: read        # required to checkout code
+#         pull-requests: write  # required to post PR preview URLs
 #       uses: bobbydeveaux/launchpad/.github/workflows/platform.yml@main
 #       secrets: inherit
 
