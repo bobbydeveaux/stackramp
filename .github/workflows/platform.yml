@@ -72,11 +72,63 @@ jobs:
               - 'launchpad.yaml'
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # 2. Deploy frontend (if changed)
+  # 2. Provision app infrastructure (idempotent)
+  # ─────────────────────────────────────────────────────────────────────────────
+  provision:
+    name: Provision infrastructure
+    runs-on: ubuntu-latest
+    needs: [parse-config]
+    steps:
+      - name: Checkout Launchpad platform
+        uses: actions/checkout@v4
+        with:
+          repository: bobbydeveaux/launchpad
+          path: .launchpad
+
+      - name: Authenticate to Google Cloud
+        uses: bobbydeveaux/launchpad/providers/gcp/workflows/auth@main
+        with:
+          wif_provider: ${{ vars.LAUNCHPAD_WIF_PROVIDER }}
+          service_account: ${{ vars.LAUNCHPAD_SA_EMAIL }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform init
+        working-directory: .launchpad/providers/gcp/terraform/platform
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ vars.LAUNCHPAD_PROJECT }}-tf-state" \
+            -backend-config="prefix=${{ needs.parse-config.outputs.app_name }}-dev"
+
+      - name: Terraform apply (dev)
+        working-directory: .launchpad/providers/gcp/terraform/platform
+        run: |
+          terraform apply -auto-approve \
+            -var="app_name=${{ needs.parse-config.outputs.app_name }}" \
+            -var="environment=dev" \
+            -var="platform_project=${{ vars.LAUNCHPAD_PROJECT }}" \
+            -var="region=${{ vars.LAUNCHPAD_REGION }}"
+
+      - name: Terraform apply (prod — main branch only)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        working-directory: .launchpad/providers/gcp/terraform/platform
+        run: |
+          terraform init -reconfigure \
+            -backend-config="bucket=${{ vars.LAUNCHPAD_PROJECT }}-tf-state" \
+            -backend-config="prefix=${{ needs.parse-config.outputs.app_name }}-prod"
+          terraform apply -auto-approve \
+            -var="app_name=${{ needs.parse-config.outputs.app_name }}" \
+            -var="environment=prod" \
+            -var="platform_project=${{ vars.LAUNCHPAD_PROJECT }}" \
+            -var="region=${{ vars.LAUNCHPAD_REGION }}"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 3. Deploy frontend (if changed)
   # ─────────────────────────────────────────────────────────────────────────────
   deploy-frontend:
     name: Frontend
-    needs: [parse-config]
+    needs: [parse-config, provision]
     if: |
       needs.parse-config.outputs.has_frontend == 'true' &&
       (needs.parse-config.outputs.frontend_changed == 'true' || github.event_name == 'workflow_dispatch')
@@ -98,7 +150,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────────
   deploy-backend:
     name: Backend
-    needs: [parse-config]
+    needs: [parse-config, provision]
     if: |
       needs.parse-config.outputs.has_backend == 'true' &&
       (needs.parse-config.outputs.backend_changed == 'true' || github.event_name == 'workflow_dispatch')

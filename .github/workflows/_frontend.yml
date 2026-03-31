@@ -81,27 +81,41 @@ jobs:
           npm ci
           npm run build
 
+      - name: Install Firebase Tools
+        run: npm install -g firebase-tools
+
+      - name: Create firebase.json
+        run: |
+          cat > firebase.json << EOF
+          {
+            "hosting": {
+              "site": "${{ inputs.app_name }}-${{ inputs.environment }}",
+              "public": "${{ inputs.frontend_dir }}/dist",
+              "ignore": ["firebase.json", "**/.*", "**/node_modules/**"]
+            }
+          }
+          EOF
+
       - name: Deploy to live channel
         if: inputs.is_pr != 'true'
         id: deploy
-        uses: FirebaseExtended/action-hosting-deploy@v0
-        with:
-          repoToken: ${{ github.token }}
-          firebaseServiceAccount: ""
-          channelId: live
-          projectId: ${{ inputs.platform_project }}
-          target: ${{ inputs.app_name }}-${{ inputs.environment }}
+        run: |
+          firebase deploy --only hosting \
+            --project ${{ inputs.platform_project }} \
+            --non-interactive 2>&1 | tee /tmp/firebase-out.txt
+          URL=$(grep -o 'https://[^ ]*\.web\.app' /tmp/firebase-out.txt | head -1)
+          echo "url=${URL}" >> $GITHUB_OUTPUT
 
       - name: Deploy to preview channel
         if: inputs.is_pr == 'true'
         id: deploy-preview
-        uses: FirebaseExtended/action-hosting-deploy@v0
-        with:
-          repoToken: ${{ github.token }}
-          firebaseServiceAccount: ""
-          channelId: pr-${{ github.event.pull_request.number }}
-          projectId: ${{ inputs.platform_project }}
-          target: ${{ inputs.app_name }}-${{ inputs.environment }}
+        run: |
+          firebase hosting:channel:deploy pr-${{ github.event.pull_request.number }} \
+            --only ${{ inputs.app_name }}-${{ inputs.environment }} \
+            --project ${{ inputs.platform_project }} \
+            --non-interactive 2>&1 | tee /tmp/firebase-out.txt
+          URL=$(grep -o 'https://[^ ]*\.web\.app' /tmp/firebase-out.txt | head -1)
+          echo "url=${URL}" >> $GITHUB_OUTPUT
 
       - name: Comment preview URL on PR
         if: inputs.is_pr == 'true'
