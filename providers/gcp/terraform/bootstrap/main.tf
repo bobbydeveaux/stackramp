@@ -90,6 +90,7 @@ resource "google_project_iam_member" "platform_roles" {
     "roles/iam.serviceAccountUser",
     "roles/cloudsql.admin",
     "roles/storage.admin",
+    "roles/dns.admin",
   ])
 
   project = local.platform_project
