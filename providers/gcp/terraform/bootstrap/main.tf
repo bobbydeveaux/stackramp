@@ -45,6 +45,7 @@ resource "google_project_service" "apis" {
     "cloudresourcemanager.googleapis.com",
     "storage.googleapis.com",
     "cloudbuild.googleapis.com",
+    "dns.googleapis.com",
   ])
 
   service            = each.value
