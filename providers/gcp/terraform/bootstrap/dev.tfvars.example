@@ -3,3 +3,4 @@ github_owner     = "my-github-org"
 environment      = "dev"
 region           = "europe-west1"
 # billing_account = "XXXXXX-XXXXXX-XXXXXX"  # optional
+# base_domain     = "myapp.io"               # optional: creates Cloud DNS zone + enables custom subdomains

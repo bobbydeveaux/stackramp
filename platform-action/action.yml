@@ -38,6 +38,9 @@ outputs:
   provider:
     description: "Cloud provider"
     value: ${{ steps.parse.outputs.provider }}
+  custom_domain:
+    description: "Custom domain from stackramp.yaml, or {app_name}.{STACKRAMP_BASE_DOMAIN} if base domain is set"
+    value: ${{ steps.parse.outputs.custom_domain }}
 
 runs:
   using: "composite"
@@ -74,6 +77,16 @@ runs:
         DATABASE=$(yq '.database // false' "$CONFIG")
         PROVIDER="${STACKRAMP_PROVIDER:-$(yq '.provider.cloud // "gcp"' "$CONFIG")}"
 
+        # Domain: explicit in yaml > app_name.BASE_DOMAIN > empty
+        EXPLICIT_DOMAIN=$(yq '.domain // ""' "$CONFIG")
+        if [ -n "$EXPLICIT_DOMAIN" ] && [ "$EXPLICIT_DOMAIN" != "null" ]; then
+          CUSTOM_DOMAIN="$EXPLICIT_DOMAIN"
+        elif [ -n "${STACKRAMP_BASE_DOMAIN:-}" ]; then
+          CUSTOM_DOMAIN="${APP_NAME}.${STACKRAMP_BASE_DOMAIN}"
+        else
+          CUSTOM_DOMAIN=""
+        fi
+
         HAS_FRONTEND="false"
         [ "$FRONTEND_FRAMEWORK" != "none" ] && [ "$FRONTEND_FRAMEWORK" != "null" ] && HAS_FRONTEND="true"
 
@@ -98,6 +111,7 @@ runs:
         echo "backend_port=$BACKEND_PORT" >> $GITHUB_OUTPUT
         echo "has_database=$HAS_DATABASE" >> $GITHUB_OUTPUT
         echo "provider=$PROVIDER" >> $GITHUB_OUTPUT
+        echo "custom_domain=$CUSTOM_DOMAIN" >> $GITHUB_OUTPUT
 
         echo "App: $APP_NAME"
         echo "Frontend: $FRONTEND_FRAMEWORK ($FRONTEND_DIR)"

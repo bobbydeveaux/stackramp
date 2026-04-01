@@ -54,6 +54,11 @@
         }
       }
     },
+    "domain": {
+      "type": "string",
+      "description": "Custom domain for this app (e.g. stackramp.io or myapp.com). Omit to use {app_name}.{STACKRAMP_BASE_DOMAIN}.",
+      "pattern": "^([a-z0-9-]+\\.)+[a-z]{2,}$"
+    },
     "database": {
       "oneOf": [
         { "type": "boolean" },

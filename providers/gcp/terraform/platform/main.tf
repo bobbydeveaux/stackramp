@@ -20,6 +20,38 @@ resource "google_firebase_hosting_site" "app" {
   site_id  = "${var.app_name}-${var.environment}"
 }
 
+# ── Custom Domain ─────────────────────────────────────────────────────────────
+
+resource "google_firebase_hosting_custom_domain" "app" {
+  count        = var.custom_domain != "" ? 1 : 0
+  provider     = google-beta
+  project      = var.platform_project
+  site_id      = google_firebase_hosting_site.app.site_id
+  custom_domain = var.custom_domain
+}
+
+# ── Cloud DNS records (if a managed zone is provided) ─────────────────────────
+
+resource "google_dns_record_set" "frontend_a" {
+  count        = var.custom_domain != "" && var.dns_zone_name != "" ? 1 : 0
+  name         = "${var.custom_domain}."
+  type         = "A"
+  ttl          = 300
+  managed_zone = var.dns_zone_name
+  project      = var.platform_project
+  rrdatas      = google_firebase_hosting_custom_domain.app[0].required_dns_updates[0].desired[*].records[0]
+}
+
+resource "google_dns_record_set" "frontend_txt" {
+  count        = var.custom_domain != "" && var.dns_zone_name != "" ? 1 : 0
+  name         = "${var.custom_domain}."
+  type         = "TXT"
+  ttl          = 300
+  managed_zone = var.dns_zone_name
+  project      = var.platform_project
+  rrdatas      = [for r in google_firebase_hosting_custom_domain.app[0].required_dns_updates : r.desired[0].records[0] if r.desired[0].domain_name == var.custom_domain && try(r.desired[0].type, "") == "TXT"]
+}
+
 # ── Cloud Run Service ─────────────────────────────────────────────────────────
 # Creates the service shell — actual deployment is done by the workflow
 

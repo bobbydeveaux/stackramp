@@ -122,6 +122,18 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   }
 }
 
+# ── Cloud DNS Zone ────────────────────────────────────────────────────────────
+# Manages DNS for the platform base domain (e.g. stackramp.io).
+# Set var.base_domain to enable. Leave empty to skip.
+
+resource "google_dns_managed_zone" "platform" {
+  count       = var.base_domain != "" ? 1 : 0
+  name        = replace(var.base_domain, ".", "-")
+  dns_name    = "${var.base_domain}."
+  description = "StackRamp platform domain"
+  depends_on  = [google_project_service.apis]
+}
+
 resource "google_service_account_iam_member" "wif_binding" {
   service_account_id = google_service_account.platform_cicd.name
   role               = "roles/iam.workloadIdentityUser"

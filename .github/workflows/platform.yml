@@ -47,6 +47,7 @@ jobs:
       frontend_changed: ${{ steps.changes.outputs.frontend }}
       backend_changed: ${{ steps.changes.outputs.backend }}
       is_pr: ${{ github.event_name == 'pull_request' }}
+      custom_domain: ${{ steps.config.outputs.custom_domain }}
 
     steps:
       - uses: actions/checkout@v4
@@ -111,7 +112,9 @@ jobs:
             -var="app_name=${{ needs.parse-config.outputs.app_name }}" \
             -var="environment=dev" \
             -var="platform_project=${{ vars.STACKRAMP_PROJECT }}" \
-            -var="region=${{ vars.STACKRAMP_REGION }}"
+            -var="region=${{ vars.STACKRAMP_REGION }}" \
+            -var="custom_domain=${{ needs.parse-config.outputs.custom_domain }}" \
+            -var="dns_zone_name=${{ vars.STACKRAMP_DNS_ZONE || '' }}"
 
       - name: Capture dev backend URL
         id: tf-out-dev
@@ -134,7 +137,9 @@ jobs:
             -var="app_name=${{ needs.parse-config.outputs.app_name }}" \
             -var="environment=prod" \
             -var="platform_project=${{ vars.STACKRAMP_PROJECT }}" \
-            -var="region=${{ vars.STACKRAMP_REGION }}"
+            -var="region=${{ vars.STACKRAMP_REGION }}" \
+            -var="custom_domain=${{ needs.parse-config.outputs.custom_domain }}" \
+            -var="dns_zone_name=${{ vars.STACKRAMP_DNS_ZONE || '' }}"
 
       - name: Capture prod backend URL
         id: tf-out-prod

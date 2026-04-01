@@ -31,3 +31,9 @@ variable "billing_account" {
   type        = string
   default     = ""
 }
+
+variable "base_domain" {
+  description = "Base domain for the platform (e.g. stackramp.io). Leave empty to skip DNS zone creation."
+  type        = string
+  default     = ""
+}
