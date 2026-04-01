@@ -81,9 +81,10 @@ resource "google_dns_record_set" "frontend_txt" {
 # Creates the service shell — actual deployment is done by the workflow
 
 resource "google_cloud_run_v2_service" "app" {
-  name     = "${var.app_name}-${var.environment}"
-  location = var.region
-  project  = var.platform_project
+  name                = "${var.app_name}-${var.environment}"
+  location            = var.region
+  project             = var.platform_project
+  deletion_protection = false
 
   template {
     containers {
