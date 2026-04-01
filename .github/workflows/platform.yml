@@ -59,6 +59,8 @@ jobs:
         uses: bobbydeveaux/stackramp/platform-action@main
         with:
           config_path: ${{ inputs.config_path }}
+        env:
+          STACKRAMP_BASE_DOMAIN: ${{ vars.STACKRAMP_BASE_DOMAIN }}
 
       - name: Detect changes
         id: changes
