@@ -30,3 +30,9 @@ variable "dns_zone_name" {
   type        = string
   default     = ""
 }
+
+variable "backend_domain" {
+  description = "Custom domain for the backend API (e.g. api.stackramp.io). Computed automatically from custom_domain. Empty = no custom domain."
+  type        = string
+  default     = ""
+}

@@ -42,6 +42,10 @@ on:
         type: string
         required: false
         default: "1"
+      frontend_url:
+        type: string
+        required: false
+        default: ""
     outputs:
       url:
         description: "Deployed backend URL"
@@ -108,7 +112,7 @@ jobs:
             --platform=managed \
             --allow-unauthenticated \
             --port=${{ inputs.backend_port }} \
-            --set-env-vars="ENVIRONMENT=${{ inputs.environment }},APP_NAME=${{ inputs.app_name }}" \
+            --set-env-vars="ENVIRONMENT=${{ inputs.environment }},APP_NAME=${{ inputs.app_name }},FRONTEND_URL=${{ inputs.frontend_url }}" \
             --memory=${{ inputs.memory }} \
             --cpu=${{ inputs.cpu }} \
             --max-instances=10 \

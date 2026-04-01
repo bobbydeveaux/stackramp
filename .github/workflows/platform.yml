@@ -82,6 +82,8 @@ jobs:
     outputs:
       backend_url_dev: ${{ steps.tf-out-dev.outputs.backend_url }}
       backend_url_prod: ${{ steps.tf-out-prod.outputs.backend_url }}
+      frontend_url_dev: ${{ steps.tf-out-dev.outputs.frontend_url }}
+      frontend_url_prod: ${{ steps.tf-out-prod.outputs.frontend_url }}
     steps:
       - name: Checkout StackRamp platform
         uses: actions/checkout@v4
@@ -116,6 +118,8 @@ jobs:
           if [ -n "$CUSTOM_DOMAIN" ] && [ -n "$BASE_DOMAIN" ] && [ "$CUSTOM_DOMAIN" = "${APP}.${BASE_DOMAIN}" ]; then
             CUSTOM_DOMAIN="${APP}.dev.${BASE_DOMAIN}"
           fi
+          BACKEND_DOMAIN=""
+          [ -n "$CUSTOM_DOMAIN" ] && [ "${{ needs.parse-config.outputs.has_backend }}" = "true" ] && BACKEND_DOMAIN="api.${CUSTOM_DOMAIN}"
 
           terraform apply -auto-approve \
             -var="app_name=${{ needs.parse-config.outputs.app_name }}" \
@@ -123,12 +127,15 @@ jobs:
             -var="platform_project=${{ vars.STACKRAMP_PROJECT }}" \
             -var="region=${{ vars.STACKRAMP_REGION }}" \
             -var="custom_domain=${CUSTOM_DOMAIN}" \
+            -var="backend_domain=${BACKEND_DOMAIN}" \
             -var="dns_zone_name=${{ vars.STACKRAMP_DNS_ZONE || '' }}"
 
-      - name: Capture dev backend URL
+      - name: Capture dev outputs
         id: tf-out-dev
         working-directory: .stackramp/providers/gcp/terraform/platform
-        run: echo "backend_url=$(terraform output -raw backend_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+        run: |
+          echo "backend_url=$(terraform output -raw backend_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          echo "frontend_url=$(terraform output -raw frontend_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
 
       - name: Terraform init (prod)
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -142,19 +149,26 @@ jobs:
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         working-directory: .stackramp/providers/gcp/terraform/platform
         run: |
+          CUSTOM_DOMAIN="${{ needs.parse-config.outputs.custom_domain }}"
+          BACKEND_DOMAIN=""
+          [ -n "$CUSTOM_DOMAIN" ] && [ "${{ needs.parse-config.outputs.has_backend }}" = "true" ] && BACKEND_DOMAIN="api.${CUSTOM_DOMAIN}"
+
           terraform apply -auto-approve \
             -var="app_name=${{ needs.parse-config.outputs.app_name }}" \
             -var="environment=prod" \
             -var="platform_project=${{ vars.STACKRAMP_PROJECT }}" \
             -var="region=${{ vars.STACKRAMP_REGION }}" \
-            -var="custom_domain=${{ needs.parse-config.outputs.custom_domain }}" \
+            -var="custom_domain=${CUSTOM_DOMAIN}" \
+            -var="backend_domain=${BACKEND_DOMAIN}" \
             -var="dns_zone_name=${{ vars.STACKRAMP_DNS_ZONE || '' }}"
 
-      - name: Capture prod backend URL
+      - name: Capture prod outputs
         id: tf-out-prod
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         working-directory: .stackramp/providers/gcp/terraform/platform
-        run: echo "backend_url=$(terraform output -raw backend_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+        run: |
+          echo "backend_url=$(terraform output -raw backend_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          echo "frontend_url=$(terraform output -raw frontend_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 3. Deploy frontend (if changed)
@@ -200,6 +214,7 @@ jobs:
       region: ${{ vars.STACKRAMP_REGION || 'europe-west1' }}
       wif_provider: ${{ vars.STACKRAMP_WIF_PROVIDER }}
       service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
+      frontend_url: ${{ needs.provision.outputs.frontend_url_dev }}
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 4. Deploy to PROD (main branch only, after dev succeeds)
@@ -246,3 +261,4 @@ jobs:
       region: ${{ vars.STACKRAMP_REGION || 'europe-west1' }}
       wif_provider: ${{ vars.STACKRAMP_WIF_PROVIDER }}
       service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
+      frontend_url: ${{ needs.provision.outputs.frontend_url_prod }}

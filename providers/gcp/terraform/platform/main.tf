@@ -118,3 +118,31 @@ resource "google_cloud_run_v2_service_iam_member" "public" {
   role     = "roles/run.invoker"
   member   = "allUsers"
 }
+
+# ── Backend Custom Domain ──────────────────────────────────────────────────────
+# Maps api.{custom_domain} to the Cloud Run service.
+# Pattern: api.stackramp.io / api.guardian.stackramp.io / api.guardian.dev.stackramp.io
+
+resource "google_cloud_run_domain_mapping" "api" {
+  count    = var.backend_domain != "" ? 1 : 0
+  location = var.region
+  name     = var.backend_domain
+
+  metadata {
+    namespace = var.platform_project
+  }
+
+  spec {
+    route_name = google_cloud_run_v2_service.app.name
+  }
+}
+
+resource "google_dns_record_set" "api_cname" {
+  count        = var.backend_domain != "" && var.dns_zone_name != "" ? 1 : 0
+  name         = "${var.backend_domain}."
+  type         = "CNAME"
+  ttl          = 300
+  managed_zone = var.dns_zone_name
+  project      = var.platform_project
+  rrdatas      = ["ghs.googlehosted.com."]
+}
