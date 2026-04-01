@@ -191,7 +191,8 @@ jobs:
       wif_provider: ${{ vars.STACKRAMP_WIF_PROVIDER }}
       service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
       is_pr: ${{ github.event_name == 'pull_request' }}
-      backend_url: ${{ needs.provision.outputs.backend_url_dev }}
+      has_backend: ${{ needs.parse-config.outputs.has_backend }}
+      backend_url: ""
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 3. Deploy backend (if changed)
@@ -239,7 +240,8 @@ jobs:
       wif_provider: ${{ vars.STACKRAMP_WIF_PROVIDER }}
       service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
       is_pr: false
-      backend_url: ${{ needs.provision.outputs.backend_url_prod }}
+      has_backend: ${{ needs.parse-config.outputs.has_backend }}
+      backend_url: ""
 
   deploy-backend-prod:
     name: Backend → prod

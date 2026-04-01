@@ -38,6 +38,10 @@ on:
         type: string
         required: false
         default: ""
+      has_backend:
+        type: string
+        required: false
+        default: "false"
     outputs:
       url:
         description: "Deployed frontend URL"
@@ -92,15 +96,37 @@ jobs:
 
       - name: Create firebase.json
         run: |
-          cat > firebase.json << EOF
+          SERVICE_NAME="${{ inputs.app_name }}-${{ inputs.environment }}"
+          if [ "${{ inputs.has_backend }}" = "true" ]; then
+            cat > firebase.json << EOF
           {
             "hosting": {
-              "site": "${{ inputs.app_name }}-${{ inputs.environment }}",
+              "site": "${SERVICE_NAME}",
+              "public": "${{ inputs.frontend_dir }}/dist",
+              "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+              "rewrites": [
+                {
+                  "source": "/api/**",
+                  "run": {
+                    "serviceId": "${SERVICE_NAME}",
+                    "region": "${{ inputs.region }}"
+                  }
+                }
+              ]
+            }
+          }
+          EOF
+          else
+            cat > firebase.json << EOF
+          {
+            "hosting": {
+              "site": "${SERVICE_NAME}",
               "public": "${{ inputs.frontend_dir }}/dist",
               "ignore": ["firebase.json", "**/.*", "**/node_modules/**"]
             }
           }
           EOF
+          fi
 
       - name: Deploy to live channel
         if: inputs.is_pr != 'true'

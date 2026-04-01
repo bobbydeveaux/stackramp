@@ -38,17 +38,15 @@ resource "google_firebase_hosting_custom_domain" "app" {
 # first apply (TXT only) and subsequent applies (TXT + A) are both safe.
 
 locals {
-  dns_enabled = var.custom_domain != "" && var.dns_zone_name != "" && length(var.custom_domain) > 0
+  dns_enabled = var.custom_domain != "" && var.dns_zone_name != ""
 
-  a_records = local.dns_enabled ? flatten([
-    for update in google_firebase_hosting_custom_domain.app[0].required_dns_updates : [
-      for desired in update.desired : [
-        for record in desired.records : record.rdata
-        if record.type == "A"
-      ]
-    ]
-  ]) : []
+  # Firebase Hosting uses stable load-balancer IPs — these do not change per-site.
+  # We hardcode them so the A record is never destroyed once created, even after
+  # Firebase considers verification complete and required_dns_updates goes empty.
+  firebase_a_records = ["199.36.158.100", "199.36.158.101"]
 
+  # TXT records are only needed during domain ownership verification.
+  # Once Firebase verifies, required_dns_updates goes empty and we remove them.
   txt_records = local.dns_enabled ? flatten([
     for update in google_firebase_hosting_custom_domain.app[0].required_dns_updates : [
       for desired in update.desired : [
@@ -60,13 +58,13 @@ locals {
 }
 
 resource "google_dns_record_set" "frontend_a" {
-  count        = local.dns_enabled && length(local.a_records) > 0 ? 1 : 0
+  count        = local.dns_enabled ? 1 : 0
   name         = "${var.custom_domain}."
   type         = "A"
   ttl          = 300
   managed_zone = var.dns_zone_name
   project      = var.platform_project
-  rrdatas      = local.a_records
+  rrdatas      = local.firebase_a_records
 }
 
 resource "google_dns_record_set" "frontend_txt" {
