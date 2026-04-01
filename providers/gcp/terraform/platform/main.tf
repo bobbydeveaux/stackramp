@@ -31,39 +31,52 @@ resource "google_firebase_hosting_custom_domain" "app" {
 }
 
 # ── Cloud DNS records (if a managed zone is provided) ─────────────────────────
+# Firebase populates required_dns_updates with TXT (ownership verification) and
+# A records. Since Cloud DNS is authoritative, Terraform injects them directly —
+# Firebase polls Cloud DNS, finds the TXT, auto-verifies, and starts serving.
+# Records are only created once Firebase has returned non-empty rrdatas, so the
+# first apply (TXT only) and subsequent applies (TXT + A) are both safe.
 
-resource "google_dns_record_set" "frontend_a" {
-  count        = var.custom_domain != "" && var.dns_zone_name != "" ? 1 : 0
-  name         = "${var.custom_domain}."
-  type         = "A"
-  ttl          = 300
-  managed_zone = var.dns_zone_name
-  project      = var.platform_project
-  rrdatas = flatten([
+locals {
+  dns_enabled = var.custom_domain != "" && var.dns_zone_name != "" && length(var.custom_domain) > 0
+
+  a_records = local.dns_enabled ? flatten([
     for update in google_firebase_hosting_custom_domain.app[0].required_dns_updates : [
       for desired in update.desired : [
         for record in desired.records : record.rdata
         if record.type == "A"
       ]
     ]
-  ])
-}
+  ]) : []
 
-resource "google_dns_record_set" "frontend_txt" {
-  count        = var.custom_domain != "" && var.dns_zone_name != "" ? 1 : 0
-  name         = "${var.custom_domain}."
-  type         = "TXT"
-  ttl          = 300
-  managed_zone = var.dns_zone_name
-  project      = var.platform_project
-  rrdatas = flatten([
+  txt_records = local.dns_enabled ? flatten([
     for update in google_firebase_hosting_custom_domain.app[0].required_dns_updates : [
       for desired in update.desired : [
         for record in desired.records : record.rdata
         if record.type == "TXT"
       ]
     ]
-  ])
+  ]) : []
+}
+
+resource "google_dns_record_set" "frontend_a" {
+  count        = local.dns_enabled && length(local.a_records) > 0 ? 1 : 0
+  name         = "${var.custom_domain}."
+  type         = "A"
+  ttl          = 300
+  managed_zone = var.dns_zone_name
+  project      = var.platform_project
+  rrdatas      = local.a_records
+}
+
+resource "google_dns_record_set" "frontend_txt" {
+  count        = local.dns_enabled && length(local.txt_records) > 0 ? 1 : 0
+  name         = "${var.custom_domain}."
+  type         = "TXT"
+  ttl          = 300
+  managed_zone = var.dns_zone_name
+  project      = var.platform_project
+  rrdatas      = local.txt_records
 }
 
 # ── Cloud Run Service ─────────────────────────────────────────────────────────
