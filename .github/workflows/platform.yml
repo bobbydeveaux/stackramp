@@ -121,14 +121,20 @@ jobs:
           BACKEND_DOMAIN=""
           [ -n "$CUSTOM_DOMAIN" ] && [ "${{ needs.parse-config.outputs.has_backend }}" = "true" ] && BACKEND_DOMAIN="api.${CUSTOM_DOMAIN}"
 
-          terraform apply -auto-approve \
-            -var="app_name=${{ needs.parse-config.outputs.app_name }}" \
-            -var="environment=dev" \
-            -var="platform_project=${{ vars.STACKRAMP_PROJECT }}" \
-            -var="region=${{ vars.STACKRAMP_REGION }}" \
-            -var="custom_domain=${CUSTOM_DOMAIN}" \
-            -var="backend_domain=${BACKEND_DOMAIN}" \
-            -var="dns_zone_name=${{ vars.STACKRAMP_DNS_ZONE || '' }}"
+          TF_VARS="-var=app_name=${{ needs.parse-config.outputs.app_name }} \
+            -var=environment=dev \
+            -var=platform_project=${{ vars.STACKRAMP_PROJECT }} \
+            -var=region=${{ vars.STACKRAMP_REGION }} \
+            -var=custom_domain=${CUSTOM_DOMAIN} \
+            -var=backend_domain=${BACKEND_DOMAIN} \
+            -var=dns_zone_name=${{ vars.STACKRAMP_DNS_ZONE || '' }}"
+
+          # Step 1: create Firebase custom domain first so required_dns_updates is populated
+          if [ -n "$CUSTOM_DOMAIN" ]; then
+            terraform apply -auto-approve -target=google_firebase_hosting_custom_domain.app $TF_VARS
+          fi
+          # Step 2: full apply — TXT records can now be created with known rrdatas
+          terraform apply -auto-approve $TF_VARS
 
       - name: Capture dev outputs
         id: tf-out-dev
@@ -153,14 +159,18 @@ jobs:
           BACKEND_DOMAIN=""
           [ -n "$CUSTOM_DOMAIN" ] && [ "${{ needs.parse-config.outputs.has_backend }}" = "true" ] && BACKEND_DOMAIN="api.${CUSTOM_DOMAIN}"
 
-          terraform apply -auto-approve \
-            -var="app_name=${{ needs.parse-config.outputs.app_name }}" \
-            -var="environment=prod" \
-            -var="platform_project=${{ vars.STACKRAMP_PROJECT }}" \
-            -var="region=${{ vars.STACKRAMP_REGION }}" \
-            -var="custom_domain=${CUSTOM_DOMAIN}" \
-            -var="backend_domain=${BACKEND_DOMAIN}" \
-            -var="dns_zone_name=${{ vars.STACKRAMP_DNS_ZONE || '' }}"
+          TF_VARS="-var=app_name=${{ needs.parse-config.outputs.app_name }} \
+            -var=environment=prod \
+            -var=platform_project=${{ vars.STACKRAMP_PROJECT }} \
+            -var=region=${{ vars.STACKRAMP_REGION }} \
+            -var=custom_domain=${CUSTOM_DOMAIN} \
+            -var=backend_domain=${BACKEND_DOMAIN} \
+            -var=dns_zone_name=${{ vars.STACKRAMP_DNS_ZONE || '' }}"
+
+          if [ -n "$CUSTOM_DOMAIN" ]; then
+            terraform apply -auto-approve -target=google_firebase_hosting_custom_domain.app $TF_VARS
+          fi
+          terraform apply -auto-approve $TF_VARS
 
       - name: Capture prod outputs
         id: tf-out-prod
