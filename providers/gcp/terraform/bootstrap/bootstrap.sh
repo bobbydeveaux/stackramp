@@ -179,6 +179,7 @@ print_success "🎉 Bootstrap complete for ${ENVIRONMENT}!"
 print_info "Next steps:"
 echo "   1. Set these as GitHub Variables (org or repo → Settings → Actions → Variables):"
 echo
+BASE_DOMAIN=$(grep 'base_domain' "$TFVARS_FILE" | cut -d'"' -f2)
 terraform output -json | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
@@ -186,6 +187,17 @@ keys = ['stackramp_provider','stackramp_project','stackramp_region','stackramp_w
 for k in keys:
     if k in data:
         print(f'      {k.upper():<30} = {data[k][\"value\"]}')
+base_domain = '${BASE_DOMAIN}'
+if base_domain:
+    dns_zone = base_domain.replace('.', '-')
+    print(f'      STACKRAMP_BASE_DOMAIN          = {base_domain}')
+    print(f'      STACKRAMP_DNS_ZONE             = {dns_zone}')
+    ns = data.get('dns_zone_nameservers', {}).get('value', [])
+    if ns:
+        print()
+        print('   Nameservers to set at your domain registrar:')
+        for n in ns:
+            print(f'      {n}')
 "
 echo
 echo "   2. Add stackramp.yaml + .github/workflows/deploy.yml to your app repo"
