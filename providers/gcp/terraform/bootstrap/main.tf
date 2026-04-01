@@ -66,9 +66,9 @@ resource "google_firebase_project" "default" {
 
 resource "google_artifact_registry_repository" "launchpad_images" {
   location      = local.region
-  repository_id = "launchpad-images"
+  repository_id = "stackramp-images"
   format        = "DOCKER"
-  description   = "Launchpad shared container registry"
+  description   = "StackRamp shared container registry"
   depends_on    = [google_project_service.apis]
 }
 
