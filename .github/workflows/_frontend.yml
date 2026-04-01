@@ -42,6 +42,10 @@ on:
         type: string
         required: false
         default: "false"
+      site_id:
+        type: string
+        required: false
+        default: ""
     outputs:
       url:
         description: "Deployed frontend URL"
@@ -96,7 +100,7 @@ jobs:
 
       - name: Create firebase.json
         run: |
-          SERVICE_NAME="${{ inputs.app_name }}-${{ inputs.environment }}"
+          SERVICE_NAME="${{ inputs.site_id != '' && inputs.site_id || format('{0}-{1}', inputs.app_name, inputs.environment) }}"
           if [ "${{ inputs.has_backend }}" = "true" ]; then
             cat > firebase.json << EOF
           {
@@ -143,7 +147,7 @@ jobs:
         id: deploy-preview
         run: |
           firebase hosting:channel:deploy pr-${{ github.event.pull_request.number }} \
-            --only ${{ inputs.app_name }}-${{ inputs.environment }} \
+            --only ${{ inputs.site_id != '' && inputs.site_id || format('{0}-{1}', inputs.app_name, inputs.environment) }} \
             --project ${{ inputs.platform_project }} \
             --non-interactive 2>&1 | tee /tmp/firebase-out.txt
           URL=$(grep -o 'https://[^ ]*\.web\.app' /tmp/firebase-out.txt | head -1)

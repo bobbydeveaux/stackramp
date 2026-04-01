@@ -84,6 +84,8 @@ jobs:
       backend_url_prod: ${{ steps.tf-out-prod.outputs.backend_url }}
       frontend_url_dev: ${{ steps.tf-out-dev.outputs.frontend_url }}
       frontend_url_prod: ${{ steps.tf-out-prod.outputs.frontend_url }}
+      site_id_dev: ${{ steps.tf-out-dev.outputs.site_id }}
+      site_id_prod: ${{ steps.tf-out-prod.outputs.site_id }}
     steps:
       - name: Checkout StackRamp platform
         uses: actions/checkout@v4
@@ -142,6 +144,7 @@ jobs:
         run: |
           echo "backend_url=$(terraform output -raw backend_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "frontend_url=$(terraform output -raw frontend_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          echo "site_id=$(terraform output -raw site_id 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
 
       - name: Terraform init (prod)
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -179,6 +182,7 @@ jobs:
         run: |
           echo "backend_url=$(terraform output -raw backend_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "frontend_url=$(terraform output -raw frontend_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          echo "site_id=$(terraform output -raw site_id 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 3. Deploy frontend (if changed)
@@ -203,6 +207,7 @@ jobs:
       is_pr: ${{ github.event_name == 'pull_request' }}
       has_backend: ${{ needs.parse-config.outputs.has_backend }}
       backend_url: ""
+      site_id: ${{ needs.provision.outputs.site_id_dev }}
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 3. Deploy backend (if changed)
@@ -252,6 +257,7 @@ jobs:
       is_pr: false
       has_backend: ${{ needs.parse-config.outputs.has_backend }}
       backend_url: ""
+      site_id: ${{ needs.provision.outputs.site_id_prod }}
 
   deploy-backend-prod:
     name: Backend → prod
