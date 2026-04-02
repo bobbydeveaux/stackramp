@@ -83,7 +83,7 @@ resource "google_dns_record_set" "frontend_cname" {
   ttl          = 300
   managed_zone = var.dns_zone_name
   project      = var.platform_project
-  rrdatas      = ["${var.app_name}-${var.environment}.web.app."]
+  rrdatas      = ["${google_firebase_hosting_site.app.site_id}.web.app."]
 }
 
 # ── Cloud Run Service ─────────────────────────────────────────────────────────
