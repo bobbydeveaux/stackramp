@@ -19,3 +19,5 @@ backend:
   cpu: "1"             # Cloud Run CPU (default: 1)
 
 database: false        # false | postgres | mysql (Phase 2)
+
+# storage: gcs         # false | gcs — provisions a GCS bucket + injects GCS_BUCKET env var

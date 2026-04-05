@@ -41,6 +41,12 @@ outputs:
   custom_domain:
     description: "Custom domain from stackramp.yaml, or {app_name}.{STACKRAMP_BASE_DOMAIN} if base domain is set"
     value: ${{ steps.parse.outputs.custom_domain }}
+  has_storage:
+    description: "Whether the app uses GCS storage"
+    value: ${{ steps.parse.outputs.has_storage }}
+  storage_type:
+    description: "Storage type (gcs or false)"
+    value: ${{ steps.parse.outputs.storage_type }}
 
 runs:
   using: "composite"
@@ -101,6 +107,15 @@ runs:
         HAS_DATABASE="false"
         [ "$DATABASE" != "false" ] && [ "$DATABASE" != "null" ] && HAS_DATABASE="true"
 
+        STORAGE=$(yq e '.storage // "false"' "$CONFIG")
+        if [ "$STORAGE" = "gcs" ]; then
+          HAS_STORAGE="true"
+          STORAGE_TYPE="gcs"
+        else
+          HAS_STORAGE="false"
+          STORAGE_TYPE="false"
+        fi
+
         echo "app_name=$APP_NAME" >> $GITHUB_OUTPUT
         echo "has_frontend=$HAS_FRONTEND" >> $GITHUB_OUTPUT
         echo "frontend_framework=$FRONTEND_FRAMEWORK" >> $GITHUB_OUTPUT
@@ -111,10 +126,13 @@ runs:
         echo "backend_port=$BACKEND_PORT" >> $GITHUB_OUTPUT
         echo "has_database=$HAS_DATABASE" >> $GITHUB_OUTPUT
         echo "provider=$PROVIDER" >> $GITHUB_OUTPUT
+        echo "has_storage=$HAS_STORAGE" >> $GITHUB_OUTPUT
+        echo "storage_type=$STORAGE_TYPE" >> $GITHUB_OUTPUT
         echo "custom_domain=$CUSTOM_DOMAIN" >> $GITHUB_OUTPUT
 
         echo "App: $APP_NAME"
         echo "Frontend: $FRONTEND_FRAMEWORK ($FRONTEND_DIR)"
         echo "Backend: $BACKEND_LANG ($BACKEND_DIR:$BACKEND_PORT)"
         echo "Database: $DATABASE"
+        echo "Storage: $STORAGE"
         echo "Provider: $PROVIDER"

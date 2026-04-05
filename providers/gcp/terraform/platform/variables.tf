@@ -36,3 +36,9 @@ variable "backend_domain" {
   type        = string
   default     = ""
 }
+
+variable "has_storage" {
+  description = "Whether to provision a GCS bucket for this app"
+  type        = bool
+  default     = false
+}

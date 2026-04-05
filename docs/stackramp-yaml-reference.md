@@ -22,6 +22,8 @@ backend:
   cpu: "1"
 
 database: false
+
+storage: gcs       # optional — provisions a GCS bucket
 ```
 
 ## Fields
@@ -167,6 +169,33 @@ Whether the app needs a managed database. When enabled (Phase 2), the platform w
 1. Create a database on the shared Cloud SQL instance
 2. Generate and store credentials in Secret Manager
 3. Inject `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` into the backend service
+
+---
+
+### `storage` (optional)
+
+| | |
+|---|---|
+| Type | `boolean` or `string` |
+| Values | `false`, `gcs` |
+| Default | `false` |
+
+Whether the app needs persistent object storage. When `gcs` is set:
+- A GCS bucket named `{app_name}-data-{environment}` is provisioned
+- The Cloud Run service account is granted `roles/storage.objectAdmin`
+- `GCS_BUCKET` env var is automatically injected into the backend service
+
+**Example:**
+```yaml
+name: my-app
+
+backend:
+  language: go
+  dir: backend
+  port: 8080
+
+storage: gcs
+```
 
 ---
 
