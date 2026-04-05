@@ -39,10 +39,10 @@ resource "google_firebase_hosting_site" "app" {
 # ── Custom Domain ─────────────────────────────────────────────────────────────
 
 resource "google_firebase_hosting_custom_domain" "app" {
-  count        = var.custom_domain != "" ? 1 : 0
-  provider     = google-beta
-  project      = var.platform_project
-  site_id      = google_firebase_hosting_site.app.site_id
+  count         = var.custom_domain != "" ? 1 : 0
+  provider      = google-beta
+  project       = var.platform_project
+  site_id       = google_firebase_hosting_site.app.site_id
   custom_domain = var.custom_domain
 }
 
@@ -54,7 +54,7 @@ resource "google_firebase_hosting_custom_domain" "app" {
 # first apply (TXT only) and subsequent applies (TXT + A) are both safe.
 
 locals {
-  dns_enabled  = var.custom_domain != "" && var.dns_zone_name != ""
+  dns_enabled = var.custom_domain != "" && var.dns_zone_name != ""
   # Apex domains (e.g. stackramp.io) cannot use CNAME — use A records.
   # Subdomains (e.g. guardian.stackramp.io) use CNAME to the Firebase site's
   # .web.app URL so Firebase can verify ownership and issue SSL automatically.
@@ -125,5 +125,35 @@ resource "google_cloud_run_v2_service_iam_member" "public" {
   name     = google_cloud_run_v2_service.app.name
   role     = "roles/run.invoker"
   member   = "allUsers"
+}
+
+# ── GCS Data Bucket (optional) ────────────────────────────────────────────────
+# When storage: gcs is declared in stackramp.yaml, provisions a persistent
+# data bucket and grants the Cloud Run service account access.
+
+data "google_project" "project" {
+  project_id = var.platform_project
+}
+
+resource "google_storage_bucket" "app_data" {
+  count         = var.has_storage ? 1 : 0
+  name          = "${var.app_name}-data-${var.environment}"
+  project       = var.platform_project
+  location      = var.region
+  force_destroy = false
+
+  uniform_bucket_level_access = true
+
+  lifecycle {
+    prevent_destroy = false
+  }
+}
+
+# Grant Cloud Run service account (default compute SA) objectAdmin on the bucket
+resource "google_storage_bucket_iam_member" "app_data_run" {
+  count  = var.has_storage ? 1 : 0
+  bucket = google_storage_bucket.app_data[0].name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${data.google_project.project.number}-compute@developer.gserviceaccount.com"
 }
 

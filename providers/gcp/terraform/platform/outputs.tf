@@ -12,3 +12,8 @@ output "backend_url" {
   description = "Backend Cloud Run URI"
   value       = google_cloud_run_v2_service.app.uri
 }
+
+output "storage_bucket" {
+  description = "GCS bucket name for app data (empty if not enabled)"
+  value       = var.has_storage ? google_storage_bucket.app_data[0].name : ""
+}
