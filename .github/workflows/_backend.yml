@@ -50,6 +50,18 @@ on:
         type: string
         required: false
         default: ""
+      extra_env_vars:
+        type: string
+        required: false
+        default: ""
+        description: "Additional comma-separated KEY=VALUE env vars to inject into Cloud Run (use for non-secret config). For secrets, use secrets: inherit and reference via secret_refs."
+    secrets:
+      BREVO_API_KEY:
+        required: false
+      JWT_SECRET:
+        required: false
+      FROM_EMAIL:
+        required: false
     outputs:
       url:
         description: "Deployed backend URL"
@@ -113,6 +125,19 @@ jobs:
           ENV_VARS="ENVIRONMENT=${{ inputs.environment }},APP_NAME=${{ inputs.app_name }},FRONTEND_URL=${{ inputs.frontend_url }}"
           if [ -n "${{ inputs.storage_bucket }}" ]; then
             ENV_VARS="${ENV_VARS},GCS_BUCKET=${{ inputs.storage_bucket }}"
+          fi
+          if [ -n "${{ inputs.extra_env_vars }}" ]; then
+            ENV_VARS="${ENV_VARS},${{ inputs.extra_env_vars }}"
+          fi
+          # Inject well-known secrets if they are set (passed via secrets: inherit)
+          if [ -n "${{ secrets.BREVO_API_KEY }}" ]; then
+            ENV_VARS="${ENV_VARS},BREVO_API_KEY=${{ secrets.BREVO_API_KEY }}"
+          fi
+          if [ -n "${{ secrets.JWT_SECRET }}" ]; then
+            ENV_VARS="${ENV_VARS},JWT_SECRET=${{ secrets.JWT_SECRET }}"
+          fi
+          if [ -n "${{ secrets.FROM_EMAIL }}" ]; then
+            ENV_VARS="${ENV_VARS},FROM_EMAIL=${{ secrets.FROM_EMAIL }}"
           fi
 
           gcloud run deploy "$SERVICE_NAME" \
