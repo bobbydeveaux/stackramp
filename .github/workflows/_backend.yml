@@ -62,6 +62,10 @@ on:
         required: false
       FROM_EMAIL:
         required: false
+      ADMIN_SECRET:
+        required: false
+      BREVO_SMTP_KEY:
+        required: false
     outputs:
       url:
         description: "Deployed backend URL"
@@ -139,6 +143,12 @@ jobs:
           if [ -n "${{ secrets.FROM_EMAIL }}" ]; then
             ENV_VARS="${ENV_VARS},FROM_EMAIL=${{ secrets.FROM_EMAIL }}"
           fi
+          if [ -n "${{ secrets.ADMIN_SECRET }}" ]; then
+            ENV_VARS="${ENV_VARS},ADMIN_SECRET=${{ secrets.ADMIN_SECRET }}"
+          fi
+          if [ -n "${{ secrets.BREVO_SMTP_KEY }}" ]; then
+            ENV_VARS="${ENV_VARS},BREVO_SMTP_KEY=${{ secrets.BREVO_SMTP_KEY }}"
+          fi
 
           gcloud run deploy "$SERVICE_NAME" \
             --image="$IMAGE" \
@@ -164,3 +174,4 @@ jobs:
             --format="value(status.url)")
           echo "url=$URL" >> $GITHUB_OUTPUT
           echo "🚀 Backend deployed: $URL"
+
