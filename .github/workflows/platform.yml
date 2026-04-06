@@ -270,7 +270,7 @@ jobs:
 
   deploy-backend-prod:
     name: Backend → prod
-    needs: [parse-config, deploy-backend]
+    needs: [parse-config, provision, deploy-backend]
     if: |
       always() &&
       github.ref == 'refs/heads/main' && github.event_name == 'push' &&
@@ -290,3 +290,4 @@ jobs:
       service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
       frontend_url: ${{ needs.provision.outputs.frontend_url_prod }}
       storage_bucket: ${{ needs.provision.outputs.storage_bucket_prod }}
+
