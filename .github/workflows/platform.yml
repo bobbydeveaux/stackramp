@@ -59,7 +59,7 @@ jobs:
 
       - name: Parse config
         id: config
-        uses: bobbydeveaux/stackramp/platform-action@main
+        uses: bobbydeveaux/stackramp/platform-action@feat/sso-iap
         with:
           config_path: ${{ inputs.config_path }}
 
