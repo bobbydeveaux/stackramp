@@ -54,7 +54,8 @@ resource "google_firebase_hosting_custom_domain" "app" {
 # first apply (TXT only) and subsequent applies (TXT + A) are both safe.
 
 locals {
-  dns_enabled = var.custom_domain != "" && var.dns_zone_name != ""
+  dns_enabled          = var.custom_domain != "" && var.dns_zone_name != ""
+  cloudsql_instance_id = var.has_database && var.cloudsql_connection_name != "" ? split(":", var.cloudsql_connection_name)[2] : ""
   # Apex domains (e.g. stackramp.io) cannot use CNAME — use A records.
   # Subdomains (e.g. guardian.stackramp.io) use CNAME to the Firebase site's
   # .web.app URL so Firebase can verify ownership and issue SSL automatically.
@@ -155,5 +156,61 @@ resource "google_storage_bucket_iam_member" "app_data_run" {
   bucket = google_storage_bucket.app_data[0].name
   role   = "roles/storage.objectAdmin"
   member = "serviceAccount:${data.google_project.project.number}-compute@developer.gserviceaccount.com"
+}
+
+# ── Per-App Postgres Database (optional) ─────────────────────────────────────
+# Creates a database + user within the shared Cloud SQL instance provisioned
+# by bootstrap. Generates a random password and stores the full DATABASE_URL
+# in Secret Manager so it is mounted directly into Cloud Run — the password
+# never appears in workflow logs.
+
+resource "random_password" "db" {
+  count   = var.has_database ? 1 : 0
+  length  = 32
+  special = false
+}
+
+resource "google_sql_database" "app" {
+  count    = var.has_database ? 1 : 0
+  name     = "${var.app_name}_${var.environment}"
+  instance = local.cloudsql_instance_id
+}
+
+resource "google_sql_user" "app" {
+  count    = var.has_database ? 1 : 0
+  name     = "${var.app_name}_${var.environment}"
+  instance = local.cloudsql_instance_id
+  password = random_password.db[0].result
+}
+
+resource "google_secret_manager_secret" "database_url" {
+  count     = var.has_database ? 1 : 0
+  secret_id = "${var.app_name}-${var.environment}-database-url"
+
+  replication { auto {} }
+}
+
+resource "google_secret_manager_secret_version" "database_url" {
+  count   = var.has_database ? 1 : 0
+  secret  = google_secret_manager_secret.database_url[0].id
+  secret_data = join("", [
+    "postgresql://",
+    google_sql_user.app[0].name,
+    ":",
+    random_password.db[0].result,
+    "@/",
+    google_sql_database.app[0].name,
+    "?host=/cloudsql/",
+    var.cloudsql_connection_name,
+  ])
+
+  depends_on = [google_sql_database.app, google_sql_user.app]
+}
+
+resource "google_secret_manager_secret_iam_member" "database_url_run_access" {
+  count     = var.has_database ? 1 : 0
+  secret_id = google_secret_manager_secret.database_url[0].id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${data.google_project.project.number}-compute@developer.gserviceaccount.com"
 }
 

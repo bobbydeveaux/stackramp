@@ -33,6 +33,16 @@ output "dns_zone_nameservers" {
   value       = var.base_domain != "" ? google_dns_managed_zone.platform[0].name_servers : []
 }
 
+output "cloudsql_connection_name" {
+  description = "Set as GitHub Variable: STACKRAMP_CLOUDSQL_CONNECTION (only when enable_postgres = true)"
+  value       = var.enable_postgres ? google_sql_database_instance.platform[0].connection_name : ""
+}
+
+output "cloudsql_instance_name" {
+  description = "Short instance name (without project/region prefix)"
+  value       = var.enable_postgres ? google_sql_database_instance.platform[0].name : ""
+}
+
 output "github_variables_summary" {
   description = "Copy these values to your GitHub org/repo Variables"
   value = <<-EOT
@@ -48,6 +58,7 @@ output "github_variables_summary" {
     │ STACKRAMP_WIF_PROVIDER = ${google_iam_workload_identity_pool_provider.github.name}
     │ STACKRAMP_SA_EMAIL     = ${google_service_account.platform_cicd.email}
     ${var.base_domain != "" ? "│ STACKRAMP_BASE_DOMAIN  = ${var.base_domain}\n    │ STACKRAMP_DNS_ZONE     = ${replace(var.base_domain, ".", "-")}" : ""}
+    ${var.enable_postgres ? "│ STACKRAMP_CLOUDSQL_CONNECTION = ${google_sql_database_instance.platform[0].connection_name}" : ""}
     │                                                                    │
     └──────────────────────────────────────────────────────────────────────┘
 

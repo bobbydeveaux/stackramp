@@ -42,3 +42,15 @@ variable "has_storage" {
   type        = bool
   default     = false
 }
+
+variable "has_database" {
+  description = "Whether to provision a Postgres database for this app within the shared Cloud SQL instance"
+  type        = bool
+  default     = false
+}
+
+variable "cloudsql_connection_name" {
+  description = "Cloud SQL instance connection name (project:region:instance) from bootstrap. Required when has_database = true."
+  type        = string
+  default     = ""
+}

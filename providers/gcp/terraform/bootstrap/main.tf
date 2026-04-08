@@ -136,6 +136,63 @@ resource "google_dns_managed_zone" "platform" {
   depends_on  = [google_project_service.apis]
 }
 
+data "google_project" "platform" {
+  project_id = var.platform_project
+  depends_on = [google_project_service.apis]
+}
+
+# ── Platform-Injectable Secrets ───────────────────────────────────────────────
+# Platform team creates the secret shell here; values are set manually in the
+# GCP Console. Any secret with the `platform-inject: true` label is automatically
+# discovered and injected into every Cloud Run deployment via --set-secrets.
+
+resource "google_secret_manager_secret" "platform" {
+  for_each  = toset(var.platform_secrets)
+  secret_id = each.value
+
+  labels = {
+    platform-inject = "true"
+  }
+
+  replication { auto {} }
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_secret_manager_secret_iam_member" "platform_run_access" {
+  for_each  = toset(var.platform_secrets)
+  secret_id = google_secret_manager_secret.platform[each.key].id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${data.google_project.platform.number}-compute@developer.gserviceaccount.com"
+}
+
+# ── Shared Cloud SQL Postgres Instance ────────────────────────────────────────
+# One instance per environment, shared across all apps. Each app that declares
+# `database: postgres` in stackramp.yaml gets its own database + user within
+# this instance — no per-app instance cost.
+
+resource "google_sql_database_instance" "platform" {
+  count            = var.enable_postgres ? 1 : 0
+  name             = "stackramp-postgres-${var.environment}"
+  database_version = "POSTGRES_16"
+  region           = var.region
+
+  settings {
+    tier = var.postgres_tier
+
+    backup_configuration {
+      enabled = true
+    }
+
+    ip_configuration {
+      ipv4_enabled = false
+    }
+  }
+
+  deletion_protection = true
+  depends_on          = [google_project_service.apis]
+}
+
 resource "google_service_account_iam_member" "wif_binding" {
   service_account_id = google_service_account.platform_cicd.name
   role               = "roles/iam.workloadIdentityUser"

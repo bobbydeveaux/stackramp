@@ -1,6 +1,22 @@
-# Copy this file to terraform.tfvars and fill in your values
-platform_project = "my-platform-dev"
-github_owner     = "my-github-org"
+# Copy this file to terraform.tfvars and adjust for your platform.
+# Secret NAMES only — values are set manually in the GCP Console after apply.
+
+platform_project = "your-gcp-project-id"
+github_owner     = "your-github-org-or-username"
 environment      = "dev"
 region           = "europe-west1"
-# billing_account = "XXXXXX-XXXXXX-XXXXXX"  # optional
+
+# Platform-wide secrets injected into every Cloud Run deployment.
+# Add new secrets here and re-run terraform apply — no workflow changes needed.
+platform_secrets = [
+  "BREVO_API_KEY",
+  "BREVO_SMTP_KEY",
+  "JWT_SECRET",
+  "FROM_EMAIL",
+  "ADMIN_SECRET",
+]
+
+# Set to true to provision the shared Cloud SQL Postgres instance.
+# After apply, set STACKRAMP_CLOUDSQL_CONNECTION as a GitHub Actions variable.
+enable_postgres = false
+# postgres_tier = "db-f1-micro"

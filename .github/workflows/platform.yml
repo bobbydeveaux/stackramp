@@ -90,6 +90,8 @@ jobs:
       site_id_prod: ${{ steps.tf-out-prod.outputs.site_id }}
       storage_bucket_dev: ${{ steps.tf-out-dev.outputs.storage_bucket }}
       storage_bucket_prod: ${{ steps.tf-out-prod.outputs.storage_bucket }}
+      database_secret_name_dev: ${{ steps.tf-out-dev.outputs.database_secret_name }}
+      database_secret_name_prod: ${{ steps.tf-out-prod.outputs.database_secret_name }}
     steps:
       - name: Checkout StackRamp platform
         uses: actions/checkout@v4
@@ -134,7 +136,9 @@ jobs:
             -var=custom_domain=${CUSTOM_DOMAIN} \
             -var=backend_domain=${BACKEND_DOMAIN} \
             -var=dns_zone_name=${{ vars.STACKRAMP_DNS_ZONE || '' }} \
-            -var=has_storage=${{ needs.parse-config.outputs.has_storage == 'true' }}"
+            -var=has_storage=${{ needs.parse-config.outputs.has_storage == 'true' }} \
+            -var=has_database=${{ needs.parse-config.outputs.has_database == 'true' }} \
+            -var=cloudsql_connection_name=${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }}"
 
           # Step 1: create Firebase custom domain first so required_dns_updates is populated
           if [ -n "$CUSTOM_DOMAIN" ]; then
@@ -151,6 +155,7 @@ jobs:
           echo "frontend_url=$(terraform output -raw frontend_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "site_id=$(terraform output -raw site_id 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "storage_bucket=$(terraform output -raw storage_bucket 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          echo "database_secret_name=$(terraform output -raw database_secret_name 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
 
       - name: Terraform init (prod)
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -175,7 +180,9 @@ jobs:
             -var=custom_domain=${CUSTOM_DOMAIN} \
             -var=backend_domain=${BACKEND_DOMAIN} \
             -var=dns_zone_name=${{ vars.STACKRAMP_DNS_ZONE || '' }} \
-            -var=has_storage=${{ needs.parse-config.outputs.has_storage == 'true' }}"
+            -var=has_storage=${{ needs.parse-config.outputs.has_storage == 'true' }} \
+            -var=has_database=${{ needs.parse-config.outputs.has_database == 'true' }} \
+            -var=cloudsql_connection_name=${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }}"
 
           if [ -n "$CUSTOM_DOMAIN" ]; then
             terraform apply -auto-approve -target=google_firebase_hosting_custom_domain.app $TF_VARS
@@ -191,6 +198,7 @@ jobs:
           echo "frontend_url=$(terraform output -raw frontend_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "site_id=$(terraform output -raw site_id 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "storage_bucket=$(terraform output -raw storage_bucket 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          echo "database_secret_name=$(terraform output -raw database_secret_name 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 3. Deploy frontend (if changed)
@@ -240,6 +248,8 @@ jobs:
       service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
       frontend_url: ${{ needs.provision.outputs.frontend_url_dev }}
       storage_bucket: ${{ needs.provision.outputs.storage_bucket_dev }}
+      cloudsql_connection_name: ${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }}
+      database_secret_name: ${{ needs.provision.outputs.database_secret_name_dev }}
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 4. Deploy to PROD (main branch only, after dev succeeds)
@@ -290,4 +300,5 @@ jobs:
       service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
       frontend_url: ${{ needs.provision.outputs.frontend_url_prod }}
       storage_bucket: ${{ needs.provision.outputs.storage_bucket_prod }}
-
+      cloudsql_connection_name: ${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }}
+      database_secret_name: ${{ needs.provision.outputs.database_secret_name_prod }}

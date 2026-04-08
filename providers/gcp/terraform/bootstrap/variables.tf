@@ -37,3 +37,21 @@ variable "base_domain" {
   type        = string
   default     = ""
 }
+
+variable "platform_secrets" {
+  description = "Secret names to create in Secret Manager as platform-injectable. Values are set manually in the GCP Console after apply — never committed here."
+  type        = list(string)
+  default     = []
+}
+
+variable "enable_postgres" {
+  description = "Provision a shared Cloud SQL Postgres instance for the platform. Apps opt-in via `database: postgres` in stackramp.yaml."
+  type        = bool
+  default     = false
+}
+
+variable "postgres_tier" {
+  description = "Cloud SQL machine tier for the shared Postgres instance."
+  type        = string
+  default     = "db-f1-micro"
+}
