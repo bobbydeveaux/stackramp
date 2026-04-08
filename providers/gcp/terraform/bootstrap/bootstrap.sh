@@ -192,12 +192,15 @@ if base_domain:
     dns_zone = base_domain.replace('.', '-')
     print(f'      STACKRAMP_BASE_DOMAIN          = {base_domain}')
     print(f'      STACKRAMP_DNS_ZONE             = {dns_zone}')
-    ns = data.get('dns_zone_nameservers', {}).get('value', [])
-    if ns:
-        print()
-        print('   Nameservers to set at your domain registrar:')
-        for n in ns:
-            print(f'      {n}')
+cloudsql = data.get('cloudsql_connection_name', {}).get('value', '')
+if cloudsql:
+    print(f'      STACKRAMP_CLOUDSQL_CONNECTION  = {cloudsql}')
+ns = data.get('dns_zone_nameservers', {}).get('value', [])
+if ns:
+    print()
+    print('   Nameservers to set at your domain registrar:')
+    for n in ns:
+        print(f'      {n}')
 "
 echo
 echo "   2. Add stackramp.yaml + .github/workflows/deploy.yml to your app repo"
