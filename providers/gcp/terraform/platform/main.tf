@@ -1,3 +1,22 @@
+# ── State migrations ──────────────────────────────────────────────────────────
+# These handle existing apps deployed before count was added to these resources.
+# Safe to keep permanently — Terraform ignores moved blocks for new apps.
+
+moved {
+  from = google_firebase_hosting_site.app
+  to   = google_firebase_hosting_site.app[0]
+}
+
+moved {
+  from = random_string.site_suffix
+  to   = random_string.site_suffix[0]
+}
+
+moved {
+  from = google_cloud_run_v2_service_iam_member.public
+  to   = google_cloud_run_v2_service_iam_member.public[0]
+}
+
 # StackRamp Per-App Infrastructure
 # Run idempotently on every deploy to ensure app infra exists.
 # Creates Firebase Hosting site + Cloud Run service for the app.
