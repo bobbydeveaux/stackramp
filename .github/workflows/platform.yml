@@ -217,7 +217,7 @@ jobs:
     if: |
       needs.parse-config.outputs.has_frontend == 'true' &&
       (needs.parse-config.outputs.frontend_changed == 'true' || github.event_name == 'workflow_dispatch')
-    uses: bobbydeveaux/stackramp/.github/workflows/_frontend.yml@main
+    uses: bobbydeveaux/stackramp/.github/workflows/_frontend.yml@feat/sso-iap
     secrets: inherit
     with:
       app_name: ${{ needs.parse-config.outputs.app_name }}
@@ -244,7 +244,7 @@ jobs:
     if: |
       needs.parse-config.outputs.has_backend == 'true' &&
       (needs.parse-config.outputs.backend_changed == 'true' || github.event_name == 'workflow_dispatch')
-    uses: bobbydeveaux/stackramp/.github/workflows/_backend.yml@main
+    uses: bobbydeveaux/stackramp/.github/workflows/_backend.yml@feat/sso-iap
     secrets: inherit
     with:
       app_name: ${{ needs.parse-config.outputs.app_name }}
@@ -273,7 +273,7 @@ jobs:
       github.ref == 'refs/heads/main' && github.event_name == 'push' &&
       needs.parse-config.outputs.has_frontend == 'true' &&
       needs.deploy-frontend.result == 'success'
-    uses: bobbydeveaux/stackramp/.github/workflows/_frontend.yml@main
+    uses: bobbydeveaux/stackramp/.github/workflows/_frontend.yml@feat/sso-iap
     secrets: inherit
     with:
       app_name: ${{ needs.parse-config.outputs.app_name }}
@@ -299,7 +299,7 @@ jobs:
       github.ref == 'refs/heads/main' && github.event_name == 'push' &&
       needs.parse-config.outputs.has_backend == 'true' &&
       needs.deploy-backend.result == 'success'
-    uses: bobbydeveaux/stackramp/.github/workflows/_backend.yml@main
+    uses: bobbydeveaux/stackramp/.github/workflows/_backend.yml@feat/sso-iap
     secrets: inherit
     with:
       app_name: ${{ needs.parse-config.outputs.app_name }}
