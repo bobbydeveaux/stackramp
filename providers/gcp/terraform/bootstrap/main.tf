@@ -206,28 +206,18 @@ resource "google_service_account_iam_member" "wif_binding" {
   member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository_owner/${var.github_owner}"
 }
 
-# ── IAP Brand + Client ────────────────────────────────────────────────────────
-# One brand and one OAuth client per platform. Apps opt in via `sso: true` in
-# stackramp.yaml. The platform team controls access via iap_allowed_domain.
-# Note: Only one IAP brand is allowed per GCP project. If one already exists,
-# import it: terraform import google_iap_brand.platform projects/{project}/brands/{brand_id}
-
-resource "google_iap_brand" "platform" {
-  count             = var.iap_allowed_domain != "" ? 1 : 0
-  support_email     = var.iap_support_email
-  application_title = var.iap_application_title
-  project           = local.platform_project
-  depends_on        = [google_project_service.apis]
-}
-
-resource "google_iap_client" "platform" {
-  count        = var.iap_allowed_domain != "" ? 1 : 0
-  display_name = "StackRamp IAP"
-  brand        = google_iap_brand.platform[0].name
-}
-
-# Store IAP credentials in Secret Manager so platform terraform can read them
-# at app provision time without them ever appearing in workflow logs.
+# ── IAP Secret Manager shells ─────────────────────────────────────────────────
+# The IAP OAuth client is created manually in the GCP Console (APIs & Services
+# → Credentials → OAuth 2.0 Client IDs). The google_iap_brand / google_iap_client
+# Terraform resources are deprecated and shut down March 2026.
+#
+# After bootstrap apply:
+# 1. GCP Console → APIs & Services → OAuth consent screen — configure if needed
+# 2. GCP Console → APIs & Services → Credentials → Create OAuth 2.0 Client ID
+#    (Web application, add no redirect URIs — IAP manages them)
+# 3. Set the client ID and secret as secret versions in Secret Manager:
+#    stackramp-iap-client-id   ← paste client ID
+#    stackramp-iap-client-secret ← paste client secret
 
 resource "google_secret_manager_secret" "iap_client_id" {
   count     = var.iap_allowed_domain != "" ? 1 : 0
@@ -238,12 +228,6 @@ resource "google_secret_manager_secret" "iap_client_id" {
   depends_on = [google_project_service.apis]
 }
 
-resource "google_secret_manager_secret_version" "iap_client_id" {
-  count       = var.iap_allowed_domain != "" ? 1 : 0
-  secret      = google_secret_manager_secret.iap_client_id[0].id
-  secret_data = google_iap_client.platform[0].client_id
-}
-
 resource "google_secret_manager_secret" "iap_client_secret" {
   count     = var.iap_allowed_domain != "" ? 1 : 0
   secret_id = "stackramp-iap-client-secret"
@@ -251,12 +235,6 @@ resource "google_secret_manager_secret" "iap_client_secret" {
     auto {}
   }
   depends_on = [google_project_service.apis]
-}
-
-resource "google_secret_manager_secret_version" "iap_client_secret" {
-  count       = var.iap_allowed_domain != "" ? 1 : 0
-  secret      = google_secret_manager_secret.iap_client_secret[0].id
-  secret_data = google_iap_client.platform[0].client_secret
 }
 
 # Grant the CICD SA access to read IAP credentials during app provisioning

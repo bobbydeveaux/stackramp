@@ -26,6 +26,7 @@ enable_postgres = false
 # or * for any authenticated Google account. Leave empty to skip IAP setup.
 # After apply, set STACKRAMP_IAP_DOMAIN as a GitHub Actions variable.
 # Note: Only one IAP brand is allowed per GCP project.
-iap_allowed_domain    = ""
-iap_support_email     = ""   # required when iap_allowed_domain is set
-# iap_application_title = "StackRamp"
+iap_allowed_domain = ""   # e.g. "yourcompany.com" or "*" for any Google account
+# After bootstrap apply, create an OAuth 2.0 client manually in GCP Console
+# (APIs & Services → Credentials) and set the client ID + secret as secret
+# versions in Secret Manager: stackramp-iap-client-id, stackramp-iap-client-secret

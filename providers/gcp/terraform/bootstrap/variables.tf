@@ -62,14 +62,3 @@ variable "iap_allowed_domain" {
   default     = ""
 }
 
-variable "iap_support_email" {
-  description = "Support email shown on the IAP consent screen. Required when iap_allowed_domain is set."
-  type        = string
-  default     = ""
-}
-
-variable "iap_application_title" {
-  description = "Application title shown on the IAP consent screen."
-  type        = string
-  default     = "StackRamp"
-}
