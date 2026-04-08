@@ -85,7 +85,7 @@ locals {
   sso_dns_enabled = var.has_sso && var.custom_domain != "" && var.dns_zone_name != ""
 
   # IAP member — domain:example.com or allAuthenticatedUsers
-  iap_member = var.iap_allowed_domain == "*" ? "allAuthenticatedUsers" : "domain:${var.iap_allowed_domain}"
+  iap_member = (var.iap_allowed_domain == "" || var.iap_allowed_domain == "*") ? "allAuthenticatedUsers" : "domain:${var.iap_allowed_domain}"
 }
 
 # Apex domain: A records pointing at Firebase's stable load-balancer IPs
