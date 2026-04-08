@@ -187,7 +187,9 @@ resource "google_secret_manager_secret" "database_url" {
   count     = var.has_database ? 1 : 0
   secret_id = "${var.app_name}-${var.environment}-database-url"
 
-  replication { auto {} }
+  replication {
+    auto {}
+  }
 }
 
 resource "google_secret_manager_secret_version" "database_url" {

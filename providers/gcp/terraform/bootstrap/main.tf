@@ -154,7 +154,9 @@ resource "google_secret_manager_secret" "platform" {
     platform-inject = "true"
   }
 
-  replication { auto {} }
+  replication {
+    auto {}
+  }
 
   depends_on = [google_project_service.apis]
 }
