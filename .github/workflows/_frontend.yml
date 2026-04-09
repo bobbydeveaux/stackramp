@@ -247,7 +247,11 @@ jobs:
             --only "$SITE_ID" \
             --project ${{ inputs.platform_project }} \
             --non-interactive 2>&1 | tee /tmp/firebase-out.txt
-          URL=$(grep -oE 'https://[^ ]*\.web\.app' /tmp/firebase-out.txt | head -1)
+          # Channel URL line contains the preview-specific URL (with --pr-N- in it)
+          URL=$(grep "Channel URL" /tmp/firebase-out.txt | grep -oE 'https://[^ ]*\.web\.app' | head -1)
+          if [ -z "$URL" ]; then
+            URL=$(grep -oE 'https://[^ ]*\.web\.app' /tmp/firebase-out.txt | head -1)
+          fi
           echo "url=${URL}" >> $GITHUB_OUTPUT
           echo "Preview URL: ${URL}"
 
