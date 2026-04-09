@@ -28,10 +28,20 @@ permissions:
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────────────
+  # 0. Cleanup preview environment when PR is closed
+  # ─────────────────────────────────────────────────────────────────────────────
+  cleanup-preview:
+    name: Cleanup PR preview
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    uses: bobbydeveaux/stackramp/.github/workflows/_cleanup-preview.yml@main
+    secrets: inherit
+
+  # ─────────────────────────────────────────────────────────────────────────────
   # 1. Parse stackramp.yaml and detect what changed
   # ─────────────────────────────────────────────────────────────────────────────
   parse-config:
     name: Parse stackramp.yaml
+    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     outputs:
       app_name: ${{ steps.config.outputs.app_name }}

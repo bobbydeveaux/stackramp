@@ -11,18 +11,9 @@ on:
 
 jobs:
   deploy:
-    if: github.event.action != 'closed'
     permissions:
       id-token: write       # required for WIF / GCP auth
       contents: read        # required to checkout code
       pull-requests: write  # required to post PR preview URLs
     uses: bobbydeveaux/stackramp/.github/workflows/platform.yml@main
-    secrets: inherit
-
-  cleanup:
-    if: github.event_name == 'pull_request' && github.event.action == 'closed'
-    permissions:
-      id-token: write
-      contents: read
-    uses: bobbydeveaux/stackramp/.github/workflows/_cleanup-preview.yml@main
     secrets: inherit
