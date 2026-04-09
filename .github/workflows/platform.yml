@@ -155,12 +155,6 @@ jobs:
             -var=has_sso=${HAS_SSO} \
             -var=iap_allowed_domain=${{ vars.STACKRAMP_IAP_DOMAIN || '' }}"
 
-          # For non-SSO apps with custom domains, create Firebase custom domain first
-          # so required_dns_updates is populated before the full apply.
-          if [ -n "$CUSTOM_DOMAIN" ] && [ "$HAS_SSO" != "true" ]; then
-            terraform apply -auto-approve -target=google_firebase_hosting_custom_domain.app $TF_VARS
-          fi
-          # Full apply
           terraform apply -auto-approve $TF_VARS
 
       - name: Capture dev outputs
@@ -203,9 +197,6 @@ jobs:
             -var=has_sso=${HAS_SSO} \
             -var=iap_allowed_domain=${{ vars.STACKRAMP_IAP_DOMAIN || '' }}"
 
-          if [ -n "$CUSTOM_DOMAIN" ] && [ "$HAS_SSO" != "true" ]; then
-            terraform apply -auto-approve -target=google_firebase_hosting_custom_domain.app $TF_VARS
-          fi
           terraform apply -auto-approve $TF_VARS
 
       - name: Capture prod outputs
