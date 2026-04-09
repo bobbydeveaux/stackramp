@@ -221,7 +221,7 @@ jobs:
       needs.parse-config.result == 'success' && needs.provision.result == 'success' &&
       (needs.deploy-backend.result == 'success' || needs.deploy-backend.result == 'skipped') &&
       needs.parse-config.outputs.has_frontend == 'true' &&
-      (needs.parse-config.outputs.frontend_changed == 'true' || github.event_name == 'workflow_dispatch')
+      (needs.parse-config.outputs.frontend_changed == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request')
     uses: bobbydeveaux/stackramp/.github/workflows/_frontend.yml@main
     secrets: inherit
     with:
@@ -248,7 +248,7 @@ jobs:
     needs: [parse-config, provision]
     if: |
       needs.parse-config.outputs.has_backend == 'true' &&
-      (needs.parse-config.outputs.backend_changed == 'true' || github.event_name == 'workflow_dispatch')
+      (needs.parse-config.outputs.backend_changed == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request')
     uses: bobbydeveaux/stackramp/.github/workflows/_backend.yml@main
     secrets: inherit
     with:
