@@ -13,17 +13,19 @@ frontend:
   framework: react
   dir: frontend
   node_version: "20"
+  sso: true          # optional — serve via Cloud Run + IAP (see SSO section)
 
 backend:
   language: python
   dir: backend
-  port: 8080
+  port: 8080         # optional — defaults to 8080
   memory: 512Mi
   cpu: "1"
+  sso: true          # optional — restrict to IAP-authenticated users
 
 database: false
 
-storage: gcs       # optional — provisions a GCS bucket
+storage: gcs         # optional — provisions a GCS bucket
 ```
 
 ## Fields
@@ -97,6 +99,15 @@ Directory containing your frontend source code, relative to repo root.
 
 Node.js version for building the frontend. Can also be set via `.nvmrc` in the frontend directory.
 
+#### `frontend.sso`
+
+| | |
+|---|---|
+| Type | `boolean` |
+| Default | `false` |
+
+When `true`, the frontend is served from Cloud Run (nginx) behind a Google IAP-protected HTTPS Load Balancer instead of Firebase Hosting. Requires `domain` to be set and the operator to have completed the [one-time IAP setup](../INTEGRATION.md#sso-via-google-iap).
+
 ---
 
 ### `backend` (optional)
@@ -136,6 +147,17 @@ Directory containing your backend source code, relative to repo root.
 | Default | `8080` |
 
 Port your backend application listens on.
+
+#### `backend.sso`
+
+| | |
+|---|---|
+| Type | `boolean` |
+| Default | `false` |
+
+When `true`, the backend Cloud Run service is placed behind the IAP load balancer and its ingress is restricted to the load balancer only. Direct Cloud Run URLs are inaccessible from the internet.
+
+Typically set together with `frontend.sso: true`. Access control is managed by the platform operator via `STACKRAMP_IAP_DOMAIN`.
 
 #### `backend.memory`
 
