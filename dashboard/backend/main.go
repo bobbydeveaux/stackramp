@@ -13,6 +13,7 @@ import (
 
 	run "cloud.google.com/go/run/apiv2"
 	runpb "cloud.google.com/go/run/apiv2/runpb"
+	"google.golang.org/api/dns/v1"
 	"google.golang.org/api/iterator"
 )
 
@@ -25,6 +26,7 @@ type ServiceInfo struct {
 	Revision     string `json:"revision"`
 	LastDeployed string `json:"lastDeployed"`
 	URL          string `json:"url"`
+	CustomDomain string `json:"customDomain,omitempty"`
 	Region       string `json:"region"`
 }
 
@@ -50,7 +52,7 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
-// handleServices lists all Cloud Run services in the project.
+// handleServices lists all Cloud Run services in the project, enriched with custom domain info.
 func handleServices(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -64,6 +66,20 @@ func handleServices(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to list services: %v", err), http.StatusInternalServerError)
 		return
+	}
+
+	// Look up custom domains from Cloud DNS (best-effort — don't fail if DNS lookup errors)
+	dnsZone := os.Getenv("DNS_ZONE")
+	if dnsZone == "" {
+		dnsZone = os.Getenv("STACKRAMP_DNS_ZONE")
+	}
+	if dnsZone != "" {
+		domainMap, err := buildDomainMap(ctx, projectID, dnsZone)
+		if err != nil {
+			log.Printf("warning: could not look up DNS records: %v", err)
+		} else {
+			enrichWithDomains(services, domainMap)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -230,4 +246,56 @@ func extractSegment(resource, key string) string {
 		}
 	}
 	return ""
+}
+
+// buildDomainMap queries Cloud DNS and returns a map of domain → domain (all A/CNAME records in the zone).
+func buildDomainMap(ctx context.Context, projectID, zoneName string) (map[string]string, error) {
+	svc, err := dns.NewService(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("creating DNS client: %w", err)
+	}
+
+	result := make(map[string]string)
+	err = svc.ResourceRecordSets.List(projectID, zoneName).Pages(ctx, func(page *dns.ResourceRecordSetsListResponse) error {
+		for _, rrs := range page.Rrsets {
+			if rrs.Type == "A" || rrs.Type == "CNAME" {
+				// Strip trailing dot from DNS name
+				domain := strings.TrimSuffix(rrs.Name, ".")
+				result[domain] = domain
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing DNS records: %w", err)
+	}
+
+	return result, nil
+}
+
+// enrichWithDomains matches services to custom domains from the DNS zone.
+// Convention: {app}.{base} for prod, {app}.dev.{base} for dev
+func enrichWithDomains(services []ServiceInfo, domainMap map[string]string) {
+	for i := range services {
+		svc := &services[i]
+		// Try to match domain patterns from the DNS records
+		for domain := range domainMap {
+			parts := strings.SplitN(domain, ".", 2)
+			if len(parts) < 2 {
+				continue
+			}
+			// Strip the -fe suffix from app name for domain matching
+			appName := strings.TrimSuffix(svc.Name, "-fe")
+
+			// Match: {app}.dev.{base} for dev, {app}.{base} for prod
+			if svc.Environment == "dev" && strings.HasPrefix(domain, appName+".dev.") {
+				svc.CustomDomain = domain
+				break
+			}
+			if svc.Environment == "prod" && parts[0] == appName && !strings.HasPrefix(parts[1], "dev.") {
+				svc.CustomDomain = domain
+				break
+			}
+		}
+	}
 }

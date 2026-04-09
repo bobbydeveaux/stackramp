@@ -162,11 +162,20 @@ export default function App() {
                         {timeAgo(svc.lastDeployed)}
                       </td>
                       <td>
-                        {svc.url ? (
+                        {svc.customDomain ? (
+                          <a
+                            href={`https://${svc.customDomain}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            {svc.customDomain}
+                          </a>
+                        ) : svc.url ? (
                           <a
                             href={svc.url}
                             target="_blank"
                             rel="noopener noreferrer"
+                            style={{ opacity: 0.6 }}
                           >
                             {svc.url.replace(/^https?:\/\//, "")}
                           </a>
