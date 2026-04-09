@@ -271,9 +271,10 @@ jobs:
     needs: [parse-config, provision, deploy-frontend]
     if: |
       always() &&
-      github.ref == 'refs/heads/main' && github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
       needs.parse-config.outputs.has_frontend == 'true' &&
-      needs.deploy-frontend.result == 'success'
+      (needs.deploy-frontend.result == 'success' || needs.deploy-frontend.result == 'skipped')
     uses: bobbydeveaux/stackramp/.github/workflows/_frontend.yml@main
     secrets: inherit
     with:
@@ -297,9 +298,10 @@ jobs:
     needs: [parse-config, provision, deploy-backend]
     if: |
       always() &&
-      github.ref == 'refs/heads/main' && github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
       needs.parse-config.outputs.has_backend == 'true' &&
-      needs.deploy-backend.result == 'success'
+      (needs.deploy-backend.result == 'success' || needs.deploy-backend.result == 'skipped')
     uses: bobbydeveaux/stackramp/.github/workflows/_backend.yml@main
     secrets: inherit
     with:
