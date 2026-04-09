@@ -242,22 +242,6 @@ jobs:
         if: inputs.sso != 'true' && inputs.is_pr == 'true'
         id: deploy-preview
         run: |
-          # Remove Cloud Run rewrites from firebase.json for preview channels
-          # (preview channels can't resolve environment-suffixed Cloud Run services)
-          if [ -f firebase.json ]; then
-            python3 -c "
-          import json
-          with open('firebase.json') as f: cfg = json.load(f)
-          h = cfg.get('hosting', cfg)
-          if isinstance(h, dict):
-            h['rewrites'] = [r for r in h.get('rewrites', []) if 'run' not in r]
-          elif isinstance(h, list):
-            for site in h:
-              site['rewrites'] = [r for r in site.get('rewrites', []) if 'run' not in r]
-          with open('firebase.json', 'w') as f: json.dump(cfg, f, indent=2)
-          " 2>/dev/null || true
-          fi
-
           SITE_ID="${{ inputs.site_id != '' && inputs.site_id || format('{0}-dev', inputs.app_name) }}"
           firebase hosting:channel:deploy pr-${{ github.event.pull_request.number }} \
             --only "$SITE_ID" \
