@@ -1,3 +1,22 @@
+# ── State migrations ──────────────────────────────────────────────────────────
+# These handle existing apps deployed before count was added to these resources.
+# Safe to keep permanently — Terraform ignores moved blocks for new apps.
+
+moved {
+  from = google_firebase_hosting_site.app
+  to   = google_firebase_hosting_site.app[0]
+}
+
+moved {
+  from = random_string.site_suffix
+  to   = random_string.site_suffix[0]
+}
+
+moved {
+  from = google_cloud_run_v2_service_iam_member.public
+  to   = google_cloud_run_v2_service_iam_member.public[0]
+}
+
 # StackRamp Per-App Infrastructure
 # Run idempotently on every deploy to ensure app infra exists.
 # Creates Firebase Hosting site + Cloud Run service for the app.
@@ -21,28 +40,30 @@ provider "random" {}
 # only new sites get the suffix stamped at first creation.
 
 resource "random_string" "site_suffix" {
+  count   = var.has_sso ? 0 : 1
   length  = 5
   special = false
   upper   = false
 }
 
 resource "google_firebase_hosting_site" "app" {
+  count    = var.has_sso ? 0 : 1
   provider = google-beta
   project  = var.platform_project
-  site_id  = "${var.app_name}-${random_string.site_suffix.result}-${var.environment}"
+  site_id  = "${var.app_name}-${random_string.site_suffix[0].result}-${var.environment}"
 
   lifecycle {
     ignore_changes = [site_id]
   }
 }
 
-# ── Custom Domain ─────────────────────────────────────────────────────────────
+# ── Custom Domain (Firebase Hosting, non-SSO only) ────────────────────────────
 
 resource "google_firebase_hosting_custom_domain" "app" {
-  count         = var.custom_domain != "" ? 1 : 0
+  count         = !var.has_sso && var.custom_domain != "" ? 1 : 0
   provider      = google-beta
   project       = var.platform_project
-  site_id       = google_firebase_hosting_site.app.site_id
+  site_id       = google_firebase_hosting_site.app[0].site_id
   custom_domain = var.custom_domain
 }
 
@@ -54,14 +75,17 @@ resource "google_firebase_hosting_custom_domain" "app" {
 # first apply (TXT only) and subsequent applies (TXT + A) are both safe.
 
 locals {
-  dns_enabled          = var.custom_domain != "" && var.dns_zone_name != ""
+  # Firebase DNS (non-SSO only)
+  dns_enabled          = !var.has_sso && var.custom_domain != "" && var.dns_zone_name != ""
   cloudsql_instance_id = var.has_database && var.cloudsql_connection_name != "" ? split(":", var.cloudsql_connection_name)[2] : ""
-  # Apex domains (e.g. stackramp.io) cannot use CNAME — use A records.
-  # Subdomains (e.g. guardian.stackramp.io) use CNAME to the Firebase site's
-  # .web.app URL so Firebase can verify ownership and issue SSL automatically.
-  is_subdomain = local.dns_enabled && length(split(".", var.custom_domain)) > 2
+  is_subdomain         = local.dns_enabled && length(split(".", var.custom_domain)) > 2
+  firebase_a_records   = ["199.36.158.100", "199.36.158.101"]
 
-  firebase_a_records = ["199.36.158.100", "199.36.158.101"]
+  # SSO DNS (points to LB static IP)
+  sso_dns_enabled = var.has_sso && var.custom_domain != "" && var.dns_zone_name != ""
+
+  # IAP member — domain:example.com or allAuthenticatedUsers
+  iap_member = (var.iap_allowed_domain == "" || var.iap_allowed_domain == "*") ? "allAuthenticatedUsers" : "domain:${var.iap_allowed_domain}"
 }
 
 # Apex domain: A records pointing at Firebase's stable load-balancer IPs
@@ -84,7 +108,7 @@ resource "google_dns_record_set" "frontend_cname" {
   ttl          = 300
   managed_zone = var.dns_zone_name
   project      = var.platform_project
-  rrdatas      = ["${google_firebase_hosting_site.app.site_id}.web.app."]
+  rrdatas      = ["${google_firebase_hosting_site.app[0].site_id}.web.app."]
 }
 
 # ── Cloud Run Service ─────────────────────────────────────────────────────────
@@ -119,13 +143,270 @@ resource "google_cloud_run_v2_service" "app" {
   }
 }
 
-# Allow unauthenticated access
+# Allow unauthenticated access (non-SSO apps only)
 resource "google_cloud_run_v2_service_iam_member" "public" {
+  count    = var.has_sso ? 0 : 1
   project  = var.platform_project
   location = var.region
   name     = google_cloud_run_v2_service.app.name
   role     = "roles/run.invoker"
   member   = "allUsers"
+}
+
+# ── SSO: IAP + HTTPS Load Balancer ───────────────────────────────────────────
+# When sso: true — frontend served from Cloud Run (not Firebase Hosting),
+# both services sit behind a single LB with IAP. The IAP OAuth client was
+# created once at bootstrap and its credentials are stored in Secret Manager.
+
+# Frontend Cloud Run service (serves nginx + built static files)
+resource "google_cloud_run_v2_service" "frontend_sso" {
+  count               = var.has_sso ? 1 : 0
+  name                = "${var.app_name}-fe-${var.environment}"
+  location            = var.region
+  project             = var.platform_project
+  deletion_protection = false
+
+  template {
+    containers {
+      image = "nginxinc/nginx-unprivileged:alpine"
+      ports {
+        container_port = 8080
+      }
+    }
+    # Only accept traffic from the HTTPS Load Balancer — IAP enforces authn there
+    scaling {
+      min_instance_count = 0
+    }
+  }
+
+  ingress = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+
+  lifecycle {
+    ignore_changes = [
+      template[0].containers[0].image,
+    ]
+  }
+}
+
+# Allow unauthenticated invocations — security is enforced by LB ingress restriction + IAP
+resource "google_cloud_run_v2_service_iam_member" "iap_frontend_invoker" {
+  count    = var.has_sso ? 1 : 0
+  project  = var.platform_project
+  location = var.region
+  name     = google_cloud_run_v2_service.frontend_sso[0].name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}
+
+# IAP SA invoker on backend — IAP requires run.invoker even when Cloud Run allows allUsers
+resource "google_cloud_run_v2_service_iam_member" "iap_backend_invoker" {
+  count    = var.has_sso ? 1 : 0
+  project  = var.platform_project
+  location = var.region
+  name     = google_cloud_run_v2_service.app.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-iap.iam.gserviceaccount.com"
+}
+
+resource "google_cloud_run_v2_service_iam_member" "iap_frontend_invoker_sa" {
+  count    = var.has_sso ? 1 : 0
+  project  = var.platform_project
+  location = var.region
+  name     = google_cloud_run_v2_service.frontend_sso[0].name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-iap.iam.gserviceaccount.com"
+}
+
+# Read IAP credentials from Secret Manager (created at bootstrap)
+data "google_secret_manager_secret_version" "iap_client_id" {
+  count   = var.has_sso ? 1 : 0
+  secret  = "stackramp-iap-client-id"
+  project = var.platform_project
+}
+
+data "google_secret_manager_secret_version" "iap_client_secret" {
+  count   = var.has_sso ? 1 : 0
+  secret  = "stackramp-iap-client-secret"
+  project = var.platform_project
+}
+
+# Static IP for the LB
+resource "google_compute_global_address" "app" {
+  count   = var.has_sso ? 1 : 0
+  name    = "${var.app_name}-${var.environment}-ip"
+  project = var.platform_project
+}
+
+# Managed SSL cert (provisioned automatically once DNS A record resolves)
+resource "google_compute_managed_ssl_certificate" "app" {
+  count   = var.has_sso && var.custom_domain != "" ? 1 : 0
+  name    = "${var.app_name}-${var.environment}-cert"
+  project = var.platform_project
+
+  managed {
+    domains = [var.custom_domain]
+  }
+}
+
+# Serverless NEGs
+resource "google_compute_region_network_endpoint_group" "frontend_neg" {
+  count                 = var.has_sso ? 1 : 0
+  name                  = "${var.app_name}-fe-${var.environment}-neg"
+  network_endpoint_type = "SERVERLESS"
+  region                = var.region
+  project               = var.platform_project
+
+  cloud_run {
+    service = google_cloud_run_v2_service.frontend_sso[0].name
+  }
+}
+
+resource "google_compute_region_network_endpoint_group" "backend_neg" {
+  count                 = var.has_sso ? 1 : 0
+  name                  = "${var.app_name}-be-${var.environment}-neg"
+  network_endpoint_type = "SERVERLESS"
+  region                = var.region
+  project               = var.platform_project
+
+  cloud_run {
+    service = google_cloud_run_v2_service.app.name
+  }
+}
+
+# Backend services with IAP enabled
+resource "google_compute_backend_service" "frontend_bs" {
+  count                 = var.has_sso ? 1 : 0
+  name                  = "${var.app_name}-fe-${var.environment}-bs"
+  project               = var.platform_project
+  protocol              = "HTTPS"
+  load_balancing_scheme = "EXTERNAL_MANAGED"
+
+  backend {
+    group = google_compute_region_network_endpoint_group.frontend_neg[0].id
+  }
+
+  iap {
+    enabled              = true
+    oauth2_client_id     = data.google_secret_manager_secret_version.iap_client_id[0].secret_data
+    oauth2_client_secret = data.google_secret_manager_secret_version.iap_client_secret[0].secret_data
+  }
+}
+
+resource "google_compute_backend_service" "backend_bs" {
+  count                 = var.has_sso ? 1 : 0
+  name                  = "${var.app_name}-be-${var.environment}-bs"
+  project               = var.platform_project
+  protocol              = "HTTPS"
+  load_balancing_scheme = "EXTERNAL_MANAGED"
+
+  backend {
+    group = google_compute_region_network_endpoint_group.backend_neg[0].id
+  }
+
+  iap {
+    enabled              = true
+    oauth2_client_id     = data.google_secret_manager_secret_version.iap_client_id[0].secret_data
+    oauth2_client_secret = data.google_secret_manager_secret_version.iap_client_secret[0].secret_data
+  }
+}
+
+# URL map: /api/* → backend, everything else → frontend
+resource "google_compute_url_map" "app" {
+  count           = var.has_sso ? 1 : 0
+  name            = "${var.app_name}-${var.environment}-urlmap"
+  project         = var.platform_project
+  default_service = google_compute_backend_service.frontend_bs[0].id
+
+  host_rule {
+    hosts        = var.custom_domain != "" ? [var.custom_domain] : ["*"]
+    path_matcher = "paths"
+  }
+
+  path_matcher {
+    name            = "paths"
+    default_service = google_compute_backend_service.frontend_bs[0].id
+
+    path_rule {
+      paths   = ["/api", "/api/*"]
+      service = google_compute_backend_service.backend_bs[0].id
+    }
+  }
+}
+
+# HTTP → HTTPS redirect
+resource "google_compute_url_map" "redirect" {
+  count   = var.has_sso ? 1 : 0
+  name    = "${var.app_name}-${var.environment}-redirect"
+  project = var.platform_project
+
+  default_url_redirect {
+    https_redirect = true
+    strip_query    = false
+  }
+}
+
+resource "google_compute_target_http_proxy" "redirect" {
+  count   = var.has_sso ? 1 : 0
+  name    = "${var.app_name}-${var.environment}-http-proxy"
+  project = var.platform_project
+  url_map = google_compute_url_map.redirect[0].id
+}
+
+resource "google_compute_global_forwarding_rule" "http_redirect" {
+  count                 = var.has_sso ? 1 : 0
+  name                  = "${var.app_name}-${var.environment}-http"
+  project               = var.platform_project
+  ip_address            = google_compute_global_address.app[0].address
+  port_range            = "80"
+  target                = google_compute_target_http_proxy.redirect[0].id
+  load_balancing_scheme = "EXTERNAL_MANAGED"
+}
+
+# HTTPS proxy + forwarding rule
+resource "google_compute_target_https_proxy" "app" {
+  count            = var.has_sso && var.custom_domain != "" ? 1 : 0
+  name             = "${var.app_name}-${var.environment}-https-proxy"
+  project          = var.platform_project
+  url_map          = google_compute_url_map.app[0].id
+  ssl_certificates = [google_compute_managed_ssl_certificate.app[0].id]
+}
+
+resource "google_compute_global_forwarding_rule" "https" {
+  count                 = var.has_sso && var.custom_domain != "" ? 1 : 0
+  name                  = "${var.app_name}-${var.environment}-https"
+  project               = var.platform_project
+  ip_address            = google_compute_global_address.app[0].address
+  port_range            = "443"
+  target                = google_compute_target_https_proxy.app[0].id
+  load_balancing_scheme = "EXTERNAL_MANAGED"
+}
+
+# DNS A record pointing to LB IP (SSO replaces Firebase DNS records)
+resource "google_dns_record_set" "sso_a" {
+  count        = local.sso_dns_enabled ? 1 : 0
+  name         = "${var.custom_domain}."
+  type         = "A"
+  ttl          = 300
+  managed_zone = var.dns_zone_name
+  project      = var.platform_project
+  rrdatas      = [google_compute_global_address.app[0].address]
+}
+
+# IAP access grants — who is allowed through the proxy
+resource "google_iap_web_backend_service_iam_member" "frontend_access" {
+  count               = var.has_sso ? 1 : 0
+  project             = var.platform_project
+  web_backend_service = google_compute_backend_service.frontend_bs[0].name
+  role                = "roles/iap.httpsResourceAccessor"
+  member              = local.iap_member
+}
+
+resource "google_iap_web_backend_service_iam_member" "backend_access" {
+  count               = var.has_sso ? 1 : 0
+  project             = var.platform_project
+  web_backend_service = google_compute_backend_service.backend_bs[0].name
+  role                = "roles/iap.httpsResourceAccessor"
+  member              = local.iap_member
 }
 
 # ── GCS Data Bucket (optional) ────────────────────────────────────────────────

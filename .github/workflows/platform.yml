@@ -50,6 +50,7 @@ jobs:
       custom_domain: ${{ steps.config.outputs.custom_domain }}
       has_storage: ${{ steps.config.outputs.has_storage }}
       storage_type: ${{ steps.config.outputs.storage_type }}
+      has_sso: ${{ steps.config.outputs.has_sso }}
 
     steps:
       - uses: actions/checkout@v4
@@ -97,6 +98,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: bobbydeveaux/stackramp
+          ref: main
           path: .stackramp
 
       - name: Authenticate to Google Cloud
@@ -129,6 +131,7 @@ jobs:
           BACKEND_DOMAIN=""
           [ -n "$CUSTOM_DOMAIN" ] && [ "${{ needs.parse-config.outputs.has_backend }}" = "true" ] && BACKEND_DOMAIN="api.${CUSTOM_DOMAIN}"
 
+          HAS_SSO="${{ needs.parse-config.outputs.has_sso }}"
           TF_VARS="-var=app_name=${{ needs.parse-config.outputs.app_name }} \
             -var=environment=dev \
             -var=platform_project=${{ vars.STACKRAMP_PROJECT }} \
@@ -138,13 +141,16 @@ jobs:
             -var=dns_zone_name=${{ vars.STACKRAMP_DNS_ZONE || '' }} \
             -var=has_storage=${{ needs.parse-config.outputs.has_storage == 'true' }} \
             -var=has_database=${{ needs.parse-config.outputs.has_database == 'true' }} \
-            -var=cloudsql_connection_name=${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }}"
+            -var=cloudsql_connection_name=${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }} \
+            -var=has_sso=${HAS_SSO} \
+            -var=iap_allowed_domain=${{ vars.STACKRAMP_IAP_DOMAIN || '' }}"
 
-          # Step 1: create Firebase custom domain first so required_dns_updates is populated
-          if [ -n "$CUSTOM_DOMAIN" ]; then
+          # For non-SSO apps with custom domains, create Firebase custom domain first
+          # so required_dns_updates is populated before the full apply.
+          if [ -n "$CUSTOM_DOMAIN" ] && [ "$HAS_SSO" != "true" ]; then
             terraform apply -auto-approve -target=google_firebase_hosting_custom_domain.app $TF_VARS
           fi
-          # Step 2: full apply — TXT records can now be created with known rrdatas
+          # Full apply
           terraform apply -auto-approve $TF_VARS
 
       - name: Capture dev outputs
@@ -173,6 +179,7 @@ jobs:
           BACKEND_DOMAIN=""
           [ -n "$CUSTOM_DOMAIN" ] && [ "${{ needs.parse-config.outputs.has_backend }}" = "true" ] && BACKEND_DOMAIN="api.${CUSTOM_DOMAIN}"
 
+          HAS_SSO="${{ needs.parse-config.outputs.has_sso }}"
           TF_VARS="-var=app_name=${{ needs.parse-config.outputs.app_name }} \
             -var=environment=prod \
             -var=platform_project=${{ vars.STACKRAMP_PROJECT }} \
@@ -182,9 +189,11 @@ jobs:
             -var=dns_zone_name=${{ vars.STACKRAMP_DNS_ZONE || '' }} \
             -var=has_storage=${{ needs.parse-config.outputs.has_storage == 'true' }} \
             -var=has_database=${{ needs.parse-config.outputs.has_database == 'true' }} \
-            -var=cloudsql_connection_name=${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }}"
+            -var=cloudsql_connection_name=${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }} \
+            -var=has_sso=${HAS_SSO} \
+            -var=iap_allowed_domain=${{ vars.STACKRAMP_IAP_DOMAIN || '' }}"
 
-          if [ -n "$CUSTOM_DOMAIN" ]; then
+          if [ -n "$CUSTOM_DOMAIN" ] && [ "$HAS_SSO" != "true" ]; then
             terraform apply -auto-approve -target=google_firebase_hosting_custom_domain.app $TF_VARS
           fi
           terraform apply -auto-approve $TF_VARS
@@ -224,6 +233,8 @@ jobs:
       has_backend: ${{ needs.parse-config.outputs.has_backend }}
       backend_url: ""
       site_id: ${{ needs.provision.outputs.site_id_dev }}
+      sso: ${{ needs.parse-config.outputs.has_sso }}
+      custom_domain: ${{ needs.parse-config.outputs.custom_domain }}
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 3. Deploy backend (if changed)
@@ -250,6 +261,7 @@ jobs:
       storage_bucket: ${{ needs.provision.outputs.storage_bucket_dev }}
       cloudsql_connection_name: ${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }}
       database_secret_name: ${{ needs.provision.outputs.database_secret_name_dev }}
+      sso: ${{ needs.parse-config.outputs.has_sso }}
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 4. Deploy to PROD (main branch only, after dev succeeds)
@@ -277,6 +289,8 @@ jobs:
       has_backend: ${{ needs.parse-config.outputs.has_backend }}
       backend_url: ""
       site_id: ${{ needs.provision.outputs.site_id_prod }}
+      sso: ${{ needs.parse-config.outputs.has_sso }}
+      custom_domain: ${{ needs.parse-config.outputs.custom_domain }}
 
   deploy-backend-prod:
     name: Backend → prod
@@ -302,3 +316,4 @@ jobs:
       storage_bucket: ${{ needs.provision.outputs.storage_bucket_prod }}
       cloudsql_connection_name: ${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }}
       database_secret_name: ${{ needs.provision.outputs.database_secret_name_prod }}
+      sso: ${{ needs.parse-config.outputs.has_sso }}

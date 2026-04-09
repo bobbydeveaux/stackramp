@@ -35,12 +35,13 @@ name: my-app
 
 frontend:
   framework: react
+  sso: true         # optional — IAP-protected, served from Cloud Run
 
 backend:
   language: python
-  port: 8080
 
 database: false
+storage: gcs        # optional — provisions a GCS bucket
 ```
 
 ### Step 3: Add one workflow file
@@ -186,9 +187,12 @@ Custom `Dockerfile` in your backend directory is always supported as an override
 - [x] Default Dockerfiles (Python, Go, Node)
 - [x] Change detection (only deploy what changed)
 - [x] PR preview deployments
-- [ ] Database injection (Cloud SQL)
+- [x] Custom domain support (Cloud DNS, SSL auto-provisioned)
+- [x] GCS storage bucket support
+- [x] Cloud SQL (Postgres) with `DATABASE_URL` injected via Secret Manager
+- [x] Platform secrets auto-injected from Secret Manager (label-based)
+- [x] SSO via GCP IAP — Global HTTPS LB + Identity-Aware Proxy, opt-in per app
 - [ ] AWS provider
-- [ ] Custom domain support
 - [ ] Deploy status dashboard
 
 ## License

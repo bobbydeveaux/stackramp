@@ -65,6 +65,11 @@ on:
         required: false
         default: ""
         description: "Secret Manager secret ID holding DATABASE_URL for this app. Mounted directly into Cloud Run."
+      sso:
+        type: string
+        required: false
+        default: "false"
+        description: "When true, Cloud Run is deployed without --allow-unauthenticated (IAP LB is the entry point)."
     outputs:
       url:
         description: "Deployed backend URL"
@@ -87,6 +92,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: bobbydeveaux/stackramp
+          ref: main
           path: .stackramp
 
       - name: Authenticate to Google Cloud
@@ -134,6 +140,19 @@ jobs:
             ENV_VARS="${ENV_VARS},${{ inputs.extra_env_vars }}"
           fi
 
+          # ── .env file (backend/.env.{environment}) ───────────────────────────
+          # Convention: commit a .env.prod / .env.dev in your backend dir for
+          # non-sensitive config. Secret values belong in Secret Manager instead.
+          ENV_FILE="${{ inputs.backend_dir }}/.env.${{ inputs.environment }}"
+          if [ -f "$ENV_FILE" ]; then
+            echo "Loading env vars from $ENV_FILE"
+            while IFS= read -r line || [ -n "$line" ]; do
+              # skip blank lines and comments
+              [[ -z "$line" || "$line" == \#* ]] && continue
+              ENV_VARS="${ENV_VARS},${line}"
+            done < "$ENV_FILE"
+          fi
+
           # ── Secret refs (mounted by Cloud Run directly from Secret Manager) ─
           # Platform-wide secrets: any secret labelled platform-inject=true is
           # automatically discovered and mounted — no workflow changes needed
@@ -158,7 +177,6 @@ jobs:
             --image="$IMAGE"
             --region="${{ inputs.region }}"
             --platform=managed
-            --allow-unauthenticated
             --port="${{ inputs.backend_port }}"
             --set-env-vars="${ENV_VARS}"
             --memory="${{ inputs.memory }}"
@@ -169,6 +187,12 @@ jobs:
             --cpu-throttling
             --project="${{ inputs.platform_project }}"
           )
+          # SSO: restrict ingress to LB only — IAP handles authn at the LB, no IAP SA grant needed
+          if [ "${{ inputs.sso }}" = "true" ]; then
+            DEPLOY_FLAGS+=(--allow-unauthenticated --ingress=internal-and-cloud-load-balancing)
+          else
+            DEPLOY_FLAGS+=(--allow-unauthenticated --ingress=all)
+          fi
           [ -n "$SECRET_REFS" ] && DEPLOY_FLAGS+=(--set-secrets="$SECRET_REFS")
           [ -n "${{ inputs.cloudsql_connection_name }}" ] && DEPLOY_FLAGS+=(--add-cloudsql-instances="${{ inputs.cloudsql_connection_name }}")
 

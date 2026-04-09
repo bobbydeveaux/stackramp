@@ -43,6 +43,11 @@ output "cloudsql_instance_name" {
   value       = var.enable_postgres ? google_sql_database_instance.platform[0].name : ""
 }
 
+output "iap_enabled" {
+  description = "Whether IAP was configured (iap_allowed_domain was set)"
+  value       = var.iap_allowed_domain != ""
+}
+
 output "github_variables_summary" {
   description = "Copy these values to your GitHub org/repo Variables"
   value = <<-EOT
@@ -59,6 +64,7 @@ output "github_variables_summary" {
     │ STACKRAMP_SA_EMAIL     = ${google_service_account.platform_cicd.email}
     ${var.base_domain != "" ? "│ STACKRAMP_BASE_DOMAIN  = ${var.base_domain}\n    │ STACKRAMP_DNS_ZONE     = ${replace(var.base_domain, ".", "-")}" : ""}
     ${var.enable_postgres ? "│ STACKRAMP_CLOUDSQL_CONNECTION = ${google_sql_database_instance.platform[0].connection_name}" : ""}
+    ${var.iap_allowed_domain != "" ? "│ STACKRAMP_IAP_DOMAIN          = ${var.iap_allowed_domain}" : ""}
     │                                                                    │
     └──────────────────────────────────────────────────────────────────────┘
 

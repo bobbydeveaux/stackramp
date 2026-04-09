@@ -47,6 +47,9 @@ outputs:
   storage_type:
     description: "Storage type (gcs or false)"
     value: ${{ steps.parse.outputs.storage_type }}
+  has_sso:
+    description: "Whether SSO (IAP) is enabled for this app"
+    value: ${{ steps.parse.outputs.has_sso }}
 
 runs:
   using: "composite"
@@ -116,6 +119,11 @@ runs:
           STORAGE_TYPE="false"
         fi
 
+        FRONTEND_SSO=$(yq '.frontend.sso // false' "$CONFIG")
+        BACKEND_SSO=$(yq '.backend.sso // false' "$CONFIG")
+        HAS_SSO="false"
+        { [ "$FRONTEND_SSO" = "true" ] || [ "$BACKEND_SSO" = "true" ]; } && HAS_SSO="true"
+
         echo "app_name=$APP_NAME" >> $GITHUB_OUTPUT
         echo "has_frontend=$HAS_FRONTEND" >> $GITHUB_OUTPUT
         echo "frontend_framework=$FRONTEND_FRAMEWORK" >> $GITHUB_OUTPUT
@@ -129,10 +137,12 @@ runs:
         echo "has_storage=$HAS_STORAGE" >> $GITHUB_OUTPUT
         echo "storage_type=$STORAGE_TYPE" >> $GITHUB_OUTPUT
         echo "custom_domain=$CUSTOM_DOMAIN" >> $GITHUB_OUTPUT
+        echo "has_sso=$HAS_SSO" >> $GITHUB_OUTPUT
 
         echo "App: $APP_NAME"
         echo "Frontend: $FRONTEND_FRAMEWORK ($FRONTEND_DIR)"
         echo "Backend: $BACKEND_LANG ($BACKEND_DIR:$BACKEND_PORT)"
         echo "Database: $DATABASE"
         echo "Storage: $STORAGE"
+        echo "SSO: $HAS_SSO"
         echo "Provider: $PROVIDER"

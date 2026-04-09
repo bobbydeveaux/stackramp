@@ -46,6 +46,16 @@ on:
         type: string
         required: false
         default: ""
+      sso:
+        type: string
+        required: false
+        default: "false"
+        description: "When true, build a Docker image and deploy to Cloud Run instead of Firebase Hosting."
+      custom_domain:
+        type: string
+        required: false
+        default: ""
+        description: "Custom domain for the app — used as the output URL when sso=true."
     outputs:
       url:
         description: "Deployed frontend URL"
@@ -58,12 +68,20 @@ permissions:
 
 jobs:
   deploy:
-    name: Firebase Hosting
+    name: ${{ inputs.sso == 'true' && 'Cloud Run (SSO)' || 'Firebase Hosting' }}
     runs-on: ubuntu-latest
     outputs:
-      url: ${{ steps.deploy.outputs.url || steps.deploy-preview.outputs.url }}
+      url: ${{ steps.deploy.outputs.url || steps.deploy-preview.outputs.url || steps.deploy-sso.outputs.url }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Checkout StackRamp platform
+        if: inputs.sso == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: bobbydeveaux/stackramp
+          ref: main
+          path: .stackramp
 
       - name: Authenticate to Google Cloud
         uses: bobbydeveaux/stackramp/providers/gcp/workflows/auth@main
@@ -95,10 +113,44 @@ jobs:
           npm ci
           npm run build
 
+      # ── SSO path: Docker + Cloud Run ──────────────────────────────────────
+      - name: Configure Docker (SSO)
+        if: inputs.sso == 'true' && inputs.is_pr != 'true'
+        run: gcloud auth configure-docker ${{ inputs.region }}-docker.pkg.dev
+
+      - name: Build & push Docker image (SSO)
+        if: inputs.sso == 'true' && inputs.is_pr != 'true'
+        run: |
+          IMAGE="${{ inputs.region }}-docker.pkg.dev/${{ inputs.platform_project }}/stackramp-images/${{ inputs.app_name }}-fe:${{ github.sha }}"
+          docker build \
+            -t "$IMAGE" \
+            -f .stackramp/platform-action/dockerfiles/nginx-spa.Dockerfile \
+            ${{ inputs.frontend_dir }}/
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+
+      - name: Deploy to Cloud Run (SSO)
+        if: inputs.sso == 'true' && inputs.is_pr != 'true'
+        id: deploy-sso
+        run: |
+          gcloud run deploy "${{ inputs.app_name }}-fe-${{ inputs.environment }}" \
+            --image="$IMAGE" \
+            --region="${{ inputs.region }}" \
+            --platform=managed \
+            --port=8080 \
+            --allow-unauthenticated \
+            --ingress=internal-and-cloud-load-balancing \
+            --project="${{ inputs.platform_project }}"
+          URL="${{ inputs.custom_domain != '' && format('https://{0}', inputs.custom_domain) || '' }}"
+          echo "url=$URL" >> $GITHUB_OUTPUT
+
+      # ── Firebase Hosting path (non-SSO) ───────────────────────────────────
       - name: Install Firebase Tools
+        if: inputs.sso != 'true'
         run: npm install -g firebase-tools
 
       - name: Create firebase.json
+        if: inputs.sso != 'true'
         run: |
           SITE_NAME="${{ inputs.site_id != '' && inputs.site_id || format('{0}-{1}', inputs.app_name, inputs.environment) }}"
           CLOUD_RUN_SERVICE="${{ inputs.app_name }}-${{ inputs.environment }}"
@@ -177,7 +229,7 @@ jobs:
           fi
 
       - name: Deploy to live channel
-        if: inputs.is_pr != 'true'
+        if: inputs.sso != 'true' && inputs.is_pr != 'true'
         id: deploy
         run: |
           firebase deploy --only hosting \
@@ -187,7 +239,7 @@ jobs:
           echo "url=${URL}" >> $GITHUB_OUTPUT
 
       - name: Deploy to preview channel
-        if: inputs.is_pr == 'true'
+        if: inputs.sso != 'true' && inputs.is_pr == 'true'
         id: deploy-preview
         run: |
           firebase hosting:channel:deploy pr-${{ github.event.pull_request.number }} \
@@ -198,7 +250,7 @@ jobs:
           echo "url=${URL}" >> $GITHUB_OUTPUT
 
       - name: Comment preview URL on PR
-        if: inputs.is_pr == 'true'
+        if: inputs.sso != 'true' && inputs.is_pr == 'true'
         uses: actions/github-script@v7
         with:
           script: |

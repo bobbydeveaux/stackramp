@@ -54,3 +54,15 @@ variable "cloudsql_connection_name" {
   type        = string
   default     = ""
 }
+
+variable "has_sso" {
+  description = "Whether to enable IAP SSO for this app. Frontend is served from Cloud Run (not Firebase Hosting) and both services sit behind a GCP HTTPS Load Balancer with IAP."
+  type        = bool
+  default     = false
+}
+
+variable "iap_allowed_domain" {
+  description = "Google Workspace domain for IAP access (e.g. yourcompany.com). Use * for allAuthenticatedUsers. Sourced from STACKRAMP_IAP_DOMAIN."
+  type        = string
+  default     = ""
+}
