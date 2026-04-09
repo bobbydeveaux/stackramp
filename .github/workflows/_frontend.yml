@@ -243,11 +243,16 @@ jobs:
         id: deploy-preview
         run: |
           firebase hosting:channel:deploy pr-${{ github.event.pull_request.number }} \
-            --only ${{ inputs.site_id != '' && inputs.site_id || format('{0}-{1}', inputs.app_name, inputs.environment) }} \
+            --only ${{ inputs.site_id != '' && inputs.site_id || format('{0}-dev', inputs.app_name) }} \
             --project ${{ inputs.platform_project }} \
             --non-interactive 2>&1 | tee /tmp/firebase-out.txt
-          URL=$(grep -o 'https://[^ ]*\.web\.app' /tmp/firebase-out.txt | head -1)
+          URL=$(grep -oE 'https://[^ ]*\.web\.app[^ ]*' /tmp/firebase-out.txt | head -1)
+          if [ -z "$URL" ]; then
+            # Fallback: try to find any https URL in the output
+            URL=$(grep -oE 'https://[^ ]+' /tmp/firebase-out.txt | head -1)
+          fi
           echo "url=${URL}" >> $GITHUB_OUTPUT
+          echo "Preview URL: ${URL}"
 
       - name: Comment preview URL on PR
         if: inputs.sso != 'true' && inputs.is_pr == 'true'
@@ -255,9 +260,10 @@ jobs:
         with:
           script: |
             const url = '${{ steps.deploy-preview.outputs.url }}';
+            const link = url ? `\n\n🔗 ${url}` : '';
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `🚀 **${{ inputs.app_name }}** frontend preview deployed!\n\n🔗 ${url}`
+              body: `🚀 **${{ inputs.app_name }}** frontend preview deployed!${link}`
             });
