@@ -10,6 +10,7 @@ frontend:
   framework: react     # react | vue | next | static | none
   dir: frontend        # directory containing your frontend code (default: frontend)
   node_version: "20"   # optional, defaults to 20 (or reads .nvmrc)
+  # spa: true          # optional — SPA catch-all routing for static framework (default: false)
 
 backend:
   language: python     # python | go | node | none

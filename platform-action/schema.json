@@ -25,6 +25,11 @@
         "node_version": {
           "type": "string",
           "default": "20"
+        },
+        "spa": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true with framework: static, adds SPA catch-all rewrite (all paths → index.html)."
         }
       }
     },

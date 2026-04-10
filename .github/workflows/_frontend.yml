@@ -56,6 +56,11 @@ on:
         required: false
         default: ""
         description: "Custom domain for the app — used as the output URL when sso=true."
+      frontend_spa:
+        type: string
+        required: false
+        default: "false"
+        description: "When 'true', adds SPA catch-all rewrite (all paths → index.html). Used with static framework."
     outputs:
       url:
         description: "Deployed frontend URL"
@@ -90,6 +95,7 @@ jobs:
           service_account: ${{ inputs.service_account }}
 
       - name: Detect Node version
+        if: inputs.frontend_framework != 'static'
         id: node-version
         run: |
           if [ -f "${{ inputs.frontend_dir }}/.nvmrc" ]; then
@@ -99,13 +105,21 @@ jobs:
           fi
 
       - name: Setup Node.js
+        if: inputs.frontend_framework != 'static'
         uses: actions/setup-node@v4
         with:
           node-version: ${{ steps.node-version.outputs.version }}
           cache: npm
           cache-dependency-path: "**/package-lock.json"
 
+      - name: Setup Node.js (static — for Firebase CLI only)
+        if: inputs.frontend_framework == 'static' && inputs.sso != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
       - name: Install & Build
+        if: inputs.frontend_framework != 'static'
         env:
           VITE_API_URL: ${{ inputs.backend_url }}
         run: |
@@ -122,9 +136,17 @@ jobs:
         if: inputs.sso == 'true' && inputs.is_pr != 'true'
         run: |
           IMAGE="${{ inputs.region }}-docker.pkg.dev/${{ inputs.platform_project }}/stackramp-images/${{ inputs.app_name }}-fe:${{ github.sha }}"
+          if [ "${{ inputs.frontend_framework }}" = "static" ]; then
+            DOCKERFILE=".stackramp/platform-action/dockerfiles/nginx-static.Dockerfile"
+            BUILD_ARGS="--build-arg SPA=${{ inputs.frontend_spa }}"
+          else
+            DOCKERFILE=".stackramp/platform-action/dockerfiles/nginx-spa.Dockerfile"
+            BUILD_ARGS=""
+          fi
           docker build \
             -t "$IMAGE" \
-            -f .stackramp/platform-action/dockerfiles/nginx-spa.Dockerfile \
+            -f "$DOCKERFILE" \
+            $BUILD_ARGS \
             ${{ inputs.frontend_dir }}/
           docker push "$IMAGE"
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
@@ -154,32 +176,28 @@ jobs:
         run: |
           SITE_NAME="${{ inputs.site_id != '' && inputs.site_id || format('{0}-{1}', inputs.app_name, inputs.environment) }}"
           CLOUD_RUN_SERVICE="${{ inputs.app_name }}-${{ inputs.environment }}"
-          if [ "${{ inputs.has_backend }}" = "true" ]; then
-            if [ "${{ inputs.frontend_framework }}" = "static" ]; then
-              cat > firebase.json << EOF
+
+          # Static framework serves frontend_dir directly; built frameworks serve frontend_dir/dist
+          if [ "${{ inputs.frontend_framework }}" = "static" ]; then
+            PUBLIC_DIR="${{ inputs.frontend_dir }}"
+          else
+            PUBLIC_DIR="${{ inputs.frontend_dir }}/dist"
+          fi
+
+          # Determine whether to add SPA catch-all rewrite:
+          #   - Built frameworks (react/vue/next): always add SPA rewrite
+          #   - Static framework: only when frontend_spa is explicitly true
+          ADD_SPA="false"
+          if [ "${{ inputs.frontend_framework }}" != "static" ] || [ "${{ inputs.frontend_spa }}" = "true" ]; then
+            ADD_SPA="true"
+          fi
+
+          if [ "${{ inputs.has_backend }}" = "true" ] && [ "$ADD_SPA" = "true" ]; then
+            cat > firebase.json << EOF
           {
             "hosting": {
               "site": "${SITE_NAME}",
-              "public": "${{ inputs.frontend_dir }}/dist",
-              "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
-              "rewrites": [
-                {
-                  "source": "/api/**",
-                  "run": {
-                    "serviceId": "${CLOUD_RUN_SERVICE}",
-                    "region": "${{ inputs.region }}"
-                  }
-                }
-              ]
-            }
-          }
-          EOF
-            else
-              cat > firebase.json << EOF
-          {
-            "hosting": {
-              "site": "${SITE_NAME}",
-              "public": "${{ inputs.frontend_dir }}/dist",
+              "public": "${PUBLIC_DIR}",
               "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
               "rewrites": [
                 {
@@ -197,24 +215,31 @@ jobs:
             }
           }
           EOF
-            fi
-          else
-            if [ "${{ inputs.frontend_framework }}" = "static" ]; then
-              cat > firebase.json << EOF
+          elif [ "${{ inputs.has_backend }}" = "true" ]; then
+            cat > firebase.json << EOF
           {
             "hosting": {
               "site": "${SITE_NAME}",
-              "public": "${{ inputs.frontend_dir }}/dist",
-              "ignore": ["firebase.json", "**/.*", "**/node_modules/**"]
+              "public": "${PUBLIC_DIR}",
+              "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+              "rewrites": [
+                {
+                  "source": "/api/**",
+                  "run": {
+                    "serviceId": "${CLOUD_RUN_SERVICE}",
+                    "region": "${{ inputs.region }}"
+                  }
+                }
+              ]
             }
           }
           EOF
-            else
-              cat > firebase.json << EOF
+          elif [ "$ADD_SPA" = "true" ]; then
+            cat > firebase.json << EOF
           {
             "hosting": {
               "site": "${SITE_NAME}",
-              "public": "${{ inputs.frontend_dir }}/dist",
+              "public": "${PUBLIC_DIR}",
               "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
               "rewrites": [
                 {
@@ -225,7 +250,16 @@ jobs:
             }
           }
           EOF
-            fi
+          else
+            cat > firebase.json << EOF
+          {
+            "hosting": {
+              "site": "${SITE_NAME}",
+              "public": "${PUBLIC_DIR}",
+              "ignore": ["firebase.json", "**/.*", "**/node_modules/**"]
+            }
+          }
+          EOF
           fi
 
       - name: Deploy to live channel
