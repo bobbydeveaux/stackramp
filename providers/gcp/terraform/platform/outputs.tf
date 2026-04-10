@@ -13,8 +13,19 @@ output "frontend_url" {
 }
 
 output "backend_url" {
-  description = "Backend Cloud Run URI"
-  value       = google_cloud_run_v2_service.app.uri
+  description = "Primary backend Cloud Run URI (backwards compatible)"
+  value = local.is_multi_backend ? (
+    google_cloud_run_v2_service.backends[local.primary_backend_key].uri
+  ) : (
+    length(google_cloud_run_v2_service.app) > 0 ? google_cloud_run_v2_service.app[0].uri : ""
+  )
+}
+
+output "backend_urls" {
+  description = "Map of all backend service URLs keyed by service name. Empty for single-backend apps."
+  value = local.is_multi_backend ? {
+    for name, svc in google_cloud_run_v2_service.backends : name => svc.uri
+  } : {}
 }
 
 output "lb_ip" {

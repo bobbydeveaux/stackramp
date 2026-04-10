@@ -52,6 +52,9 @@ jobs:
       backend_dir: ${{ steps.config.outputs.backend_dir }}
       backend_language: ${{ steps.config.outputs.backend_language }}
       backend_port: ${{ steps.config.outputs.backend_port }}
+      backends_json: ${{ steps.config.outputs.backends_json }}
+      backend_names: ${{ steps.config.outputs.backend_names }}
+      primary_backend: ${{ steps.config.outputs.primary_backend }}
       has_database: ${{ steps.config.outputs.has_database }}
       provider: ${{ steps.config.outputs.provider }}
       frontend_changed: ${{ steps.changes.outputs.frontend }}
@@ -95,6 +98,8 @@ jobs:
     outputs:
       backend_url_dev: ${{ steps.tf-out-dev.outputs.backend_url }}
       backend_url_prod: ${{ steps.tf-out-prod.outputs.backend_url }}
+      backend_urls_dev: ${{ steps.tf-out-dev.outputs.backend_urls }}
+      backend_urls_prod: ${{ steps.tf-out-prod.outputs.backend_urls }}
       frontend_url_dev: ${{ steps.tf-out-dev.outputs.frontend_url }}
       frontend_url_prod: ${{ steps.tf-out-prod.outputs.frontend_url }}
       site_id_dev: ${{ steps.tf-out-dev.outputs.site_id }}
@@ -141,6 +146,24 @@ jobs:
           BACKEND_DOMAIN=""
           [ -n "$CUSTOM_DOMAIN" ] && [ "${{ needs.parse-config.outputs.has_backend }}" = "true" ] && BACKEND_DOMAIN="api.${CUSTOM_DOMAIN}"
 
+          # Build backend_services map for Terraform
+          BACKENDS_JSON='${{ needs.parse-config.outputs.backends_json }}'
+          BACKEND_NAMES='${{ needs.parse-config.outputs.backend_names }}'
+
+          # Convert backends JSON array to Terraform map variable
+          # Format: {"api":true,"predictor":true} — Terraform uses for_each on the keys
+          if [ -n "$BACKEND_NAMES" ] && [ "$BACKEND_NAMES" != "backend" ]; then
+            # Multi-backend: pass service names as a set
+            BACKEND_SERVICES_VAR=$(echo "$BACKENDS_JSON" | python3 -c "
+          import json, sys
+          backends = json.load(sys.stdin)
+          result = {b['name']: True for b in backends}
+          print(json.dumps(result))
+          ")
+          else
+            BACKEND_SERVICES_VAR='{}'
+          fi
+
           HAS_SSO="${{ needs.parse-config.outputs.has_sso }}"
           TF_VARS="-var=app_name=${{ needs.parse-config.outputs.app_name }} \
             -var=environment=dev \
@@ -155,6 +178,12 @@ jobs:
             -var=has_sso=${HAS_SSO} \
             -var=iap_allowed_domain=${{ vars.STACKRAMP_IAP_DOMAIN || '' }}"
 
+          # Only pass backend_services when there are multiple backends
+          if [ "$BACKEND_SERVICES_VAR" != '{}' ]; then
+            TF_VARS="$TF_VARS -var=backend_services=${BACKEND_SERVICES_VAR}"
+            TF_VARS="$TF_VARS -var=primary_backend_name=${{ needs.parse-config.outputs.primary_backend }}"
+          fi
+
           terraform apply -auto-approve $TF_VARS
 
       - name: Capture dev outputs
@@ -166,6 +195,8 @@ jobs:
           echo "site_id=$(terraform output -raw site_id 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "storage_bucket=$(terraform output -raw storage_bucket 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "database_secret_name=$(terraform output -raw database_secret_name 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          # Capture all backend URLs as JSON map for service discovery
+          echo "backend_urls=$(terraform output -json backend_urls 2>/dev/null || echo '{}')" >> $GITHUB_OUTPUT
 
       - name: Terraform init (prod)
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -183,6 +214,20 @@ jobs:
           BACKEND_DOMAIN=""
           [ -n "$CUSTOM_DOMAIN" ] && [ "${{ needs.parse-config.outputs.has_backend }}" = "true" ] && BACKEND_DOMAIN="api.${CUSTOM_DOMAIN}"
 
+          BACKENDS_JSON='${{ needs.parse-config.outputs.backends_json }}'
+          BACKEND_NAMES='${{ needs.parse-config.outputs.backend_names }}'
+
+          if [ -n "$BACKEND_NAMES" ] && [ "$BACKEND_NAMES" != "backend" ]; then
+            BACKEND_SERVICES_VAR=$(echo "$BACKENDS_JSON" | python3 -c "
+          import json, sys
+          backends = json.load(sys.stdin)
+          result = {b['name']: True for b in backends}
+          print(json.dumps(result))
+          ")
+          else
+            BACKEND_SERVICES_VAR='{}'
+          fi
+
           HAS_SSO="${{ needs.parse-config.outputs.has_sso }}"
           TF_VARS="-var=app_name=${{ needs.parse-config.outputs.app_name }} \
             -var=environment=prod \
@@ -197,6 +242,11 @@ jobs:
             -var=has_sso=${HAS_SSO} \
             -var=iap_allowed_domain=${{ vars.STACKRAMP_IAP_DOMAIN || '' }}"
 
+          if [ "$BACKEND_SERVICES_VAR" != '{}' ]; then
+            TF_VARS="$TF_VARS -var=backend_services=${BACKEND_SERVICES_VAR}"
+            TF_VARS="$TF_VARS -var=primary_backend_name=${{ needs.parse-config.outputs.primary_backend }}"
+          fi
+
           terraform apply -auto-approve $TF_VARS
 
       - name: Capture prod outputs
@@ -209,17 +259,208 @@ jobs:
           echo "site_id=$(terraform output -raw site_id 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "storage_bucket=$(terraform output -raw storage_bucket 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "database_secret_name=$(terraform output -raw database_secret_name 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          echo "backend_urls=$(terraform output -json backend_urls 2>/dev/null || echo '{}')" >> $GITHUB_OUTPUT
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # 3. Deploy frontend (if changed)
+  # 3a. Deploy backends (dev) — iterates over all backend services
+  # ─────────────────────────────────────────────────────────────────────────────
+  deploy-backends:
+    name: Backends (dev)
+    needs: [parse-config, provision]
+    if: |
+      needs.parse-config.outputs.has_backend == 'true' &&
+      (needs.parse-config.outputs.backend_changed == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request')
+    runs-on: ubuntu-latest
+    outputs:
+      deployed: ${{ steps.deploy-all.outputs.deployed }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout StackRamp platform
+        uses: actions/checkout@v4
+        with:
+          repository: bobbydeveaux/stackramp
+          ref: main
+          path: .stackramp
+
+      - name: Authenticate to Google Cloud
+        uses: bobbydeveaux/stackramp/providers/gcp/workflows/auth@main
+        with:
+          wif_provider: ${{ vars.STACKRAMP_WIF_PROVIDER }}
+          service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ vars.STACKRAMP_REGION || 'europe-west1' }}-docker.pkg.dev
+
+      - name: Deploy all backend services
+        id: deploy-all
+        run: |
+          APP_NAME="${{ needs.parse-config.outputs.app_name }}"
+          ENVIRONMENT="${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || 'dev' }}"
+          REGION="${{ vars.STACKRAMP_REGION || 'europe-west1' }}"
+          PROJECT="${{ vars.STACKRAMP_PROJECT }}"
+          FRONTEND_URL="${{ needs.provision.outputs.frontend_url_dev }}"
+          STORAGE_BUCKET="${{ needs.provision.outputs.storage_bucket_dev }}"
+          DATABASE_SECRET="${{ needs.provision.outputs.database_secret_name_dev }}"
+          CLOUDSQL_CONN="${{ vars.STACKRAMP_CLOUDSQL_CONNECTION }}"
+          SSO="${{ needs.parse-config.outputs.has_sso }}"
+          BACKEND_URLS_JSON='${{ needs.provision.outputs.backend_urls_dev }}'
+          BACKENDS_JSON='${{ needs.parse-config.outputs.backends_json }}'
+          BACKEND_NAMES='${{ needs.parse-config.outputs.backend_names }}'
+
+          # Parse backends JSON
+          BACKEND_COUNT=$(echo "$BACKENDS_JSON" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
+
+          for i in $(seq 0 $((BACKEND_COUNT - 1))); do
+            # Extract backend config
+            BACKEND=$(echo "$BACKENDS_JSON" | python3 -c "import json,sys; b=json.load(sys.stdin)[$i]; print(json.dumps(b))")
+            NAME=$(echo "$BACKEND" | python3 -c "import json,sys; print(json.load(sys.stdin)['name'])")
+            LANGUAGE=$(echo "$BACKEND" | python3 -c "import json,sys; print(json.load(sys.stdin)['language'])")
+            DIR=$(echo "$BACKEND" | python3 -c "import json,sys; print(json.load(sys.stdin)['dir'])")
+            PORT=$(echo "$BACKEND" | python3 -c "import json,sys; print(json.load(sys.stdin)['port'])")
+            MEMORY=$(echo "$BACKEND" | python3 -c "import json,sys; print(json.load(sys.stdin)['memory'])")
+            CPU=$(echo "$BACKEND" | python3 -c "import json,sys; print(json.load(sys.stdin)['cpu'])")
+            BACKEND_ENV=$(echo "$BACKEND" | python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin).get('env',{})))")
+
+            echo "::group::Deploying backend: $NAME ($LANGUAGE, $DIR:$PORT)"
+
+            # ── Determine Cloud Run service name and image tag ──
+            if [ "$BACKEND_COUNT" -gt 1 ]; then
+              SERVICE_NAME="${APP_NAME}-${NAME}-${ENVIRONMENT}"
+              IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/stackramp-images/${APP_NAME}-${NAME}:${GITHUB_SHA}"
+            else
+              SERVICE_NAME="${APP_NAME}-${ENVIRONMENT}"
+              IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/stackramp-images/${APP_NAME}:${GITHUB_SHA}"
+            fi
+
+            # ── Build Docker image ──
+            if [ -f "${DIR}/Dockerfile" ]; then
+              echo "Using custom Dockerfile from ${DIR}/Dockerfile"
+              docker build -t "$IMAGE" "${DIR}/"
+            else
+              echo "Using platform Dockerfile for ${LANGUAGE}"
+              docker build \
+                -t "$IMAGE" \
+                -f ".stackramp/platform-action/dockerfiles/${LANGUAGE}.Dockerfile" \
+                "${DIR}/"
+            fi
+            docker push "$IMAGE"
+
+            # ── Build env vars ──
+            ENV_VARS="ENVIRONMENT=${ENVIRONMENT},APP_NAME=${APP_NAME},FRONTEND_URL=${FRONTEND_URL}"
+            [ -n "$STORAGE_BUCKET" ] && ENV_VARS="${ENV_VARS},GCS_BUCKET=${STORAGE_BUCKET}"
+
+            # Service discovery: inject other backends' URLs as env vars
+            # e.g. for a backend named "predictor", inject PREDICTOR_URL=https://...
+            if [ "$BACKEND_COUNT" -gt 1 ] && [ "$BACKEND_URLS_JSON" != "{}" ] && [ -n "$BACKEND_URLS_JSON" ]; then
+              DISCOVERY_VARS=$(echo "$BACKEND_URLS_JSON" | python3 -c "
+          import json, sys
+          urls = json.load(sys.stdin)
+          current = '${NAME}'
+          parts = []
+          for svc_name, url in urls.items():
+            if svc_name != current:
+              env_key = svc_name.upper().replace('-', '_') + '_URL'
+              parts.append(f'{env_key}={url}')
+          print(','.join(parts))
+          ")
+              [ -n "$DISCOVERY_VARS" ] && ENV_VARS="${ENV_VARS},${DISCOVERY_VARS}"
+            fi
+
+            # Resolve ${backends.<name>.url} references in user-defined env vars
+            if [ "$BACKEND_ENV" != "{}" ] && [ "$BACKEND_ENV" != "null" ]; then
+              USER_ENV=$(echo "$BACKEND_ENV" | python3 -c "
+          import json, sys, re
+          env = json.load(sys.stdin)
+          urls_raw = '''${BACKEND_URLS_JSON}'''
+          try:
+            urls = json.loads(urls_raw) if urls_raw else {}
+          except:
+            urls = {}
+          parts = []
+          for k, v in env.items():
+            # Replace \${backends.<name>.url} with actual URL
+            def replacer(m):
+              svc = m.group(1)
+              return urls.get(svc, m.group(0))
+            resolved = re.sub(r'\\\$\{backends\.([^.]+)\.url\}', replacer, str(v))
+            parts.append(f'{k}={resolved}')
+          print(','.join(parts))
+          ")
+              [ -n "$USER_ENV" ] && ENV_VARS="${ENV_VARS},${USER_ENV}"
+            fi
+
+            # Load .env file if present
+            ENV_FILE="${DIR}/.env.${ENVIRONMENT}"
+            if [ -f "$ENV_FILE" ]; then
+              echo "Loading env vars from $ENV_FILE"
+              while IFS= read -r line || [ -n "$line" ]; do
+                [[ -z "$line" || "$line" == \#* ]] && continue
+                ENV_VARS="${ENV_VARS},${line}"
+              done < "$ENV_FILE"
+            fi
+
+            # ── Secret refs ──
+            SECRET_REFS=""
+            PLATFORM_SECRETS=$(gcloud secrets list \
+              --filter="labels.platform-inject=true" \
+              --format="value(name)" \
+              --project="${PROJECT}")
+            for SECRET_RESOURCE in $PLATFORM_SECRETS; do
+              SECRET_NAME=$(basename "$SECRET_RESOURCE")
+              SECRET_REFS="${SECRET_REFS:+$SECRET_REFS,}${SECRET_NAME}=${SECRET_NAME}:latest"
+            done
+            [ -n "$DATABASE_SECRET" ] && SECRET_REFS="${SECRET_REFS:+$SECRET_REFS,}DATABASE_URL=${DATABASE_SECRET}:latest"
+
+            # ── Deploy to Cloud Run ──
+            DEPLOY_FLAGS=(
+              --image="$IMAGE"
+              --region="${REGION}"
+              --platform=managed
+              --port="${PORT}"
+              --set-env-vars="${ENV_VARS}"
+              --memory="${MEMORY}"
+              --cpu="${CPU}"
+              --min-instances=1
+              --max-instances=10
+              --timeout=300
+              --cpu-throttling
+              --project="${PROJECT}"
+            )
+            if [ "$SSO" = "true" ]; then
+              DEPLOY_FLAGS+=(--allow-unauthenticated --ingress=internal-and-cloud-load-balancing)
+            else
+              DEPLOY_FLAGS+=(--allow-unauthenticated --ingress=all)
+            fi
+            [ -n "$SECRET_REFS" ] && DEPLOY_FLAGS+=(--set-secrets="$SECRET_REFS")
+            [ -n "$CLOUDSQL_CONN" ] && DEPLOY_FLAGS+=(--add-cloudsql-instances="${CLOUDSQL_CONN}")
+
+            gcloud run deploy "$SERVICE_NAME" "${DEPLOY_FLAGS[@]}"
+
+            URL=$(gcloud run services describe "$SERVICE_NAME" \
+              --region="$REGION" \
+              --project="$PROJECT" \
+              --format="value(status.url)")
+            echo "Deployed $NAME: $URL"
+
+            echo "::endgroup::"
+          done
+
+          echo "deployed=true" >> $GITHUB_OUTPUT
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 3b. Deploy frontend (if changed)
   # ─────────────────────────────────────────────────────────────────────────────
   deploy-frontend:
     name: Frontend
-    needs: [parse-config, provision, deploy-backend]
+    needs: [parse-config, provision, deploy-backends]
     if: |
       always() &&
       needs.parse-config.result == 'success' && needs.provision.result == 'success' &&
-      (needs.deploy-backend.result == 'success' || needs.deploy-backend.result == 'skipped') &&
+      (needs.deploy-backends.result == 'success' || needs.deploy-backends.result == 'skipped') &&
       needs.parse-config.outputs.has_frontend == 'true' &&
       (needs.parse-config.outputs.frontend_changed == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request')
     uses: bobbydeveaux/stackramp/.github/workflows/_frontend.yml@main
@@ -239,39 +480,14 @@ jobs:
       site_id: ${{ needs.provision.outputs.site_id_dev }}
       sso: ${{ needs.parse-config.outputs.has_sso }}
       custom_domain: ${{ needs.parse-config.outputs.custom_domain }}
-
-  # ─────────────────────────────────────────────────────────────────────────────
-  # 3. Deploy backend (if changed)
-  # ─────────────────────────────────────────────────────────────────────────────
-  deploy-backend:
-    name: Backend
-    needs: [parse-config, provision]
-    if: |
-      needs.parse-config.outputs.has_backend == 'true' &&
-      (needs.parse-config.outputs.backend_changed == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request')
-    uses: bobbydeveaux/stackramp/.github/workflows/_backend.yml@main
-    secrets: inherit
-    with:
-      app_name: ${{ needs.parse-config.outputs.app_name }}
-      backend_dir: ${{ needs.parse-config.outputs.backend_dir }}
-      backend_language: ${{ needs.parse-config.outputs.backend_language }}
-      backend_port: ${{ fromJson(needs.parse-config.outputs.backend_port) }}
-      environment: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || 'dev' }}
-      platform_project: ${{ vars.STACKRAMP_PROJECT }}
-      region: ${{ vars.STACKRAMP_REGION || 'europe-west1' }}
-      wif_provider: ${{ vars.STACKRAMP_WIF_PROVIDER }}
-      service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
-      frontend_url: ${{ needs.provision.outputs.frontend_url_dev }}
-      storage_bucket: ${{ needs.provision.outputs.storage_bucket_dev }}
-      cloudsql_connection_name: ${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }}
-      database_secret_name: ${{ needs.provision.outputs.database_secret_name_dev }}
-      sso: ${{ needs.parse-config.outputs.has_sso }}
+      # For multi-backend: tell the frontend which Cloud Run service handles /api/**
+      primary_backend_service: ${{ needs.parse-config.outputs.backend_names != 'backend' && needs.parse-config.outputs.primary_backend != '' && format('{0}-{1}-{2}', needs.parse-config.outputs.app_name, needs.parse-config.outputs.primary_backend, github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || 'dev') || '' }}
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 4. Deploy to PROD (main branch only, after dev succeeds)
   # ─────────────────────────────────────────────────────────────────────────────
   deploy-frontend-prod:
-    name: Frontend → prod
+    name: Frontend (prod)
     needs: [parse-config, provision, deploy-frontend]
     if: |
       always() &&
@@ -296,30 +512,174 @@ jobs:
       site_id: ${{ needs.provision.outputs.site_id_prod }}
       sso: ${{ needs.parse-config.outputs.has_sso }}
       custom_domain: ${{ needs.parse-config.outputs.custom_domain }}
+      primary_backend_service: ${{ needs.parse-config.outputs.backend_names != 'backend' && needs.parse-config.outputs.primary_backend != '' && format('{0}-{1}-prod', needs.parse-config.outputs.app_name, needs.parse-config.outputs.primary_backend) || '' }}
 
-  deploy-backend-prod:
-    name: Backend → prod
-    needs: [parse-config, provision, deploy-backend]
+  deploy-backends-prod:
+    name: Backends (prod)
+    needs: [parse-config, provision, deploy-backends]
     if: |
       always() &&
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
       needs.parse-config.outputs.has_backend == 'true' &&
-      (needs.deploy-backend.result == 'success' || needs.deploy-backend.result == 'skipped')
-    uses: bobbydeveaux/stackramp/.github/workflows/_backend.yml@main
-    secrets: inherit
-    with:
-      app_name: ${{ needs.parse-config.outputs.app_name }}
-      backend_dir: ${{ needs.parse-config.outputs.backend_dir }}
-      backend_language: ${{ needs.parse-config.outputs.backend_language }}
-      backend_port: ${{ fromJson(needs.parse-config.outputs.backend_port) }}
-      environment: prod
-      platform_project: ${{ vars.STACKRAMP_PROJECT }}
-      region: ${{ vars.STACKRAMP_REGION || 'europe-west1' }}
-      wif_provider: ${{ vars.STACKRAMP_WIF_PROVIDER }}
-      service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
-      frontend_url: ${{ needs.provision.outputs.frontend_url_prod }}
-      storage_bucket: ${{ needs.provision.outputs.storage_bucket_prod }}
-      cloudsql_connection_name: ${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }}
-      database_secret_name: ${{ needs.provision.outputs.database_secret_name_prod }}
-      sso: ${{ needs.parse-config.outputs.has_sso }}
+      (needs.deploy-backends.result == 'success' || needs.deploy-backends.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout StackRamp platform
+        uses: actions/checkout@v4
+        with:
+          repository: bobbydeveaux/stackramp
+          ref: main
+          path: .stackramp
+
+      - name: Authenticate to Google Cloud
+        uses: bobbydeveaux/stackramp/providers/gcp/workflows/auth@main
+        with:
+          wif_provider: ${{ vars.STACKRAMP_WIF_PROVIDER }}
+          service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ vars.STACKRAMP_REGION || 'europe-west1' }}-docker.pkg.dev
+
+      - name: Deploy all backend services (prod)
+        run: |
+          APP_NAME="${{ needs.parse-config.outputs.app_name }}"
+          ENVIRONMENT="prod"
+          REGION="${{ vars.STACKRAMP_REGION || 'europe-west1' }}"
+          PROJECT="${{ vars.STACKRAMP_PROJECT }}"
+          FRONTEND_URL="${{ needs.provision.outputs.frontend_url_prod }}"
+          STORAGE_BUCKET="${{ needs.provision.outputs.storage_bucket_prod }}"
+          DATABASE_SECRET="${{ needs.provision.outputs.database_secret_name_prod }}"
+          CLOUDSQL_CONN="${{ vars.STACKRAMP_CLOUDSQL_CONNECTION }}"
+          SSO="${{ needs.parse-config.outputs.has_sso }}"
+          BACKEND_URLS_JSON='${{ needs.provision.outputs.backend_urls_prod }}'
+          BACKENDS_JSON='${{ needs.parse-config.outputs.backends_json }}'
+          BACKEND_NAMES='${{ needs.parse-config.outputs.backend_names }}'
+
+          BACKEND_COUNT=$(echo "$BACKENDS_JSON" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
+
+          for i in $(seq 0 $((BACKEND_COUNT - 1))); do
+            BACKEND=$(echo "$BACKENDS_JSON" | python3 -c "import json,sys; b=json.load(sys.stdin)[$i]; print(json.dumps(b))")
+            NAME=$(echo "$BACKEND" | python3 -c "import json,sys; print(json.load(sys.stdin)['name'])")
+            LANGUAGE=$(echo "$BACKEND" | python3 -c "import json,sys; print(json.load(sys.stdin)['language'])")
+            DIR=$(echo "$BACKEND" | python3 -c "import json,sys; print(json.load(sys.stdin)['dir'])")
+            PORT=$(echo "$BACKEND" | python3 -c "import json,sys; print(json.load(sys.stdin)['port'])")
+            MEMORY=$(echo "$BACKEND" | python3 -c "import json,sys; print(json.load(sys.stdin)['memory'])")
+            CPU=$(echo "$BACKEND" | python3 -c "import json,sys; print(json.load(sys.stdin)['cpu'])")
+            BACKEND_ENV=$(echo "$BACKEND" | python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin).get('env',{})))")
+
+            echo "::group::Deploying backend: $NAME ($LANGUAGE, $DIR:$PORT)"
+
+            if [ "$BACKEND_COUNT" -gt 1 ]; then
+              SERVICE_NAME="${APP_NAME}-${NAME}-${ENVIRONMENT}"
+              IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/stackramp-images/${APP_NAME}-${NAME}:${GITHUB_SHA}"
+            else
+              SERVICE_NAME="${APP_NAME}-${ENVIRONMENT}"
+              IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/stackramp-images/${APP_NAME}:${GITHUB_SHA}"
+            fi
+
+            if [ -f "${DIR}/Dockerfile" ]; then
+              docker build -t "$IMAGE" "${DIR}/"
+            else
+              docker build \
+                -t "$IMAGE" \
+                -f ".stackramp/platform-action/dockerfiles/${LANGUAGE}.Dockerfile" \
+                "${DIR}/"
+            fi
+            docker push "$IMAGE"
+
+            ENV_VARS="ENVIRONMENT=${ENVIRONMENT},APP_NAME=${APP_NAME},FRONTEND_URL=${FRONTEND_URL}"
+            [ -n "$STORAGE_BUCKET" ] && ENV_VARS="${ENV_VARS},GCS_BUCKET=${STORAGE_BUCKET}"
+
+            if [ "$BACKEND_COUNT" -gt 1 ] && [ "$BACKEND_URLS_JSON" != "{}" ] && [ -n "$BACKEND_URLS_JSON" ]; then
+              DISCOVERY_VARS=$(echo "$BACKEND_URLS_JSON" | python3 -c "
+          import json, sys
+          urls = json.load(sys.stdin)
+          current = '${NAME}'
+          parts = []
+          for svc_name, url in urls.items():
+            if svc_name != current:
+              env_key = svc_name.upper().replace('-', '_') + '_URL'
+              parts.append(f'{env_key}={url}')
+          print(','.join(parts))
+          ")
+              [ -n "$DISCOVERY_VARS" ] && ENV_VARS="${ENV_VARS},${DISCOVERY_VARS}"
+            fi
+
+            if [ "$BACKEND_ENV" != "{}" ] && [ "$BACKEND_ENV" != "null" ]; then
+              USER_ENV=$(echo "$BACKEND_ENV" | python3 -c "
+          import json, sys, re
+          env = json.load(sys.stdin)
+          urls_raw = '''${BACKEND_URLS_JSON}'''
+          try:
+            urls = json.loads(urls_raw) if urls_raw else {}
+          except:
+            urls = {}
+          parts = []
+          for k, v in env.items():
+            def replacer(m):
+              svc = m.group(1)
+              return urls.get(svc, m.group(0))
+            resolved = re.sub(r'\\\$\{backends\.([^.]+)\.url\}', replacer, str(v))
+            parts.append(f'{k}={resolved}')
+          print(','.join(parts))
+          ")
+              [ -n "$USER_ENV" ] && ENV_VARS="${ENV_VARS},${USER_ENV}"
+            fi
+
+            ENV_FILE="${DIR}/.env.${ENVIRONMENT}"
+            if [ -f "$ENV_FILE" ]; then
+              while IFS= read -r line || [ -n "$line" ]; do
+                [[ -z "$line" || "$line" == \#* ]] && continue
+                ENV_VARS="${ENV_VARS},${line}"
+              done < "$ENV_FILE"
+            fi
+
+            SECRET_REFS=""
+            PLATFORM_SECRETS=$(gcloud secrets list \
+              --filter="labels.platform-inject=true" \
+              --format="value(name)" \
+              --project="${PROJECT}")
+            for SECRET_RESOURCE in $PLATFORM_SECRETS; do
+              SECRET_NAME=$(basename "$SECRET_RESOURCE")
+              SECRET_REFS="${SECRET_REFS:+$SECRET_REFS,}${SECRET_NAME}=${SECRET_NAME}:latest"
+            done
+            [ -n "$DATABASE_SECRET" ] && SECRET_REFS="${SECRET_REFS:+$SECRET_REFS,}DATABASE_URL=${DATABASE_SECRET}:latest"
+
+            DEPLOY_FLAGS=(
+              --image="$IMAGE"
+              --region="${REGION}"
+              --platform=managed
+              --port="${PORT}"
+              --set-env-vars="${ENV_VARS}"
+              --memory="${MEMORY}"
+              --cpu="${CPU}"
+              --min-instances=1
+              --max-instances=10
+              --timeout=300
+              --cpu-throttling
+              --project="${PROJECT}"
+            )
+            if [ "$SSO" = "true" ]; then
+              DEPLOY_FLAGS+=(--allow-unauthenticated --ingress=internal-and-cloud-load-balancing)
+            else
+              DEPLOY_FLAGS+=(--allow-unauthenticated --ingress=all)
+            fi
+            [ -n "$SECRET_REFS" ] && DEPLOY_FLAGS+=(--set-secrets="$SECRET_REFS")
+            [ -n "$CLOUDSQL_CONN" ] && DEPLOY_FLAGS+=(--add-cloudsql-instances="${CLOUDSQL_CONN}")
+
+            gcloud run deploy "$SERVICE_NAME" "${DEPLOY_FLAGS[@]}"
+
+            URL=$(gcloud run services describe "$SERVICE_NAME" \
+              --region="$REGION" \
+              --project="$PROJECT" \
+              --format="value(status.url)")
+            echo "Deployed $NAME (prod): $URL"
+
+            echo "::endgroup::"
+          done

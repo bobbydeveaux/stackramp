@@ -30,10 +30,11 @@
     },
     "backend": {
       "type": "object",
+      "description": "Single backend configuration (mutually exclusive with 'backends')",
       "properties": {
         "language": {
           "type": "string",
-          "enum": ["python", "go", "node", "none"],
+          "enum": ["python", "go", "node", "rust", "none"],
           "default": "none"
         },
         "dir": {
@@ -51,6 +52,48 @@
         "cpu": {
           "type": "string",
           "default": "1"
+        }
+      }
+    },
+    "backends": {
+      "type": "object",
+      "description": "Multiple named backend services. Each key is a service name.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "language": {
+            "type": "string",
+            "enum": ["python", "go", "node", "rust", "none"],
+            "default": "none"
+          },
+          "dir": {
+            "type": "string",
+            "description": "Directory containing the service code (default: same as service name)"
+          },
+          "port": {
+            "type": "integer",
+            "default": 8080
+          },
+          "memory": {
+            "type": "string",
+            "default": "512Mi"
+          },
+          "cpu": {
+            "type": "string",
+            "default": "1"
+          },
+          "primary": {
+            "type": "boolean",
+            "default": false,
+            "description": "Mark this backend as the primary service for /api/** proxy routing from the frontend"
+          },
+          "env": {
+            "type": "object",
+            "description": "Additional environment variables. Supports ${backends.<name>.url} for service discovery.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
         }
       }
     },

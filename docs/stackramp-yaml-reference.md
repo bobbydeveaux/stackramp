@@ -179,6 +179,79 @@ CPU allocation for the backend service. Examples: `1`, `2`, `4`.
 
 ---
 
+### `backends` (optional — multi-service)
+
+Use `backends` (plural) instead of `backend` (singular) when your application needs multiple independent backend services. Each key is a service name, and each service gets its own Cloud Run deployment with independent language, directory, port, CPU, and memory configuration.
+
+**`backend` and `backends` are mutually exclusive** — use one or the other. Existing apps using `backend` continue to work unchanged.
+
+#### Full Example
+
+```yaml
+name: trade-simulator
+
+frontend:
+  framework: static
+  dir: frontend
+
+backends:
+  api:
+    language: rust
+    dir: backend
+    port: 8080
+    primary: true
+    env:
+      PREDICTOR_URL: ${backends.predictor.url}
+  predictor:
+    language: python
+    dir: predictor
+    port: 8085
+    memory: 1Gi
+    cpu: "2"
+```
+
+#### Per-service fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `language` | `string` | `none` | `python`, `go`, `node`, `rust`, `none` |
+| `dir` | `string` | service name | Directory containing service code |
+| `port` | `integer` | `8080` | Port the service listens on |
+| `memory` | `string` | `512Mi` | Cloud Run memory allocation |
+| `cpu` | `string` | `1` | Cloud Run CPU allocation |
+| `primary` | `boolean` | `false` | Marks this service as the primary backend for `/api/**` routing |
+| `env` | `object` | `{}` | Additional environment variables (key-value pairs) |
+
+#### Service discovery
+
+Each backend automatically receives the URLs of all other backends as environment variables. The variable name is derived from the service name:
+
+- A service named `predictor` is available to other services as `PREDICTOR_URL`
+- A service named `auth-service` is available as `AUTH_SERVICE_URL`
+
+You can also explicitly reference other services in the `env` block using the `${backends.<name>.url}` syntax:
+
+```yaml
+env:
+  PREDICTOR_URL: ${backends.predictor.url}
+```
+
+Both automatic injection and explicit references resolve to the Cloud Run service URL (e.g. `https://myapp-predictor-dev-abc123.a.run.app`).
+
+#### Primary backend
+
+The primary backend handles `/api/**` routing from the frontend (via Firebase Hosting rewrites or the SSO load balancer URL map). You can mark a backend as primary with `primary: true`. If no backend is explicitly marked, the first one listed is used.
+
+#### Cloud Run naming
+
+Each backend gets a separate Cloud Run service named `{app_name}-{service_name}-{environment}`:
+- `trade-simulator-api-dev`
+- `trade-simulator-predictor-dev`
+- `trade-simulator-api-prod`
+- `trade-simulator-predictor-prod`
+
+---
+
 ### `database`
 
 | | |

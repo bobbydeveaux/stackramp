@@ -6,6 +6,11 @@ on:
       app_name:
         type: string
         required: true
+      service_name:
+        type: string
+        required: false
+        default: ""
+        description: "Backend service name (for multi-backend apps). Empty = use app_name as the Cloud Run service name."
       backend_dir:
         type: string
         required: true
@@ -54,7 +59,7 @@ on:
         type: string
         required: false
         default: ""
-        description: "Additional comma-separated KEY=VALUE env vars to inject into Cloud Run (non-secret config only)."
+        description: "Additional comma-separated KEY=VALUE env vars to inject into Cloud Run (non-secret config only). Used for service discovery URLs."
       cloudsql_connection_name:
         type: string
         required: false
@@ -109,7 +114,12 @@ jobs:
 
       - name: Build Docker image
         run: |
-          IMAGE="${{ inputs.region }}-docker.pkg.dev/${{ inputs.platform_project }}/stackramp-images/${{ inputs.app_name }}:${{ github.sha }}"
+          # For multi-backend apps, tag images per service; for single backend, use app_name
+          if [ -n "${{ inputs.service_name }}" ]; then
+            IMAGE="${{ inputs.region }}-docker.pkg.dev/${{ inputs.platform_project }}/stackramp-images/${{ inputs.app_name }}-${{ inputs.service_name }}:${{ github.sha }}"
+          else
+            IMAGE="${{ inputs.region }}-docker.pkg.dev/${{ inputs.platform_project }}/stackramp-images/${{ inputs.app_name }}:${{ github.sha }}"
+          fi
 
           if [ -f "${{ inputs.backend_dir }}/Dockerfile" ]; then
             echo "Using custom Dockerfile from ${{ inputs.backend_dir }}/Dockerfile"
@@ -129,7 +139,12 @@ jobs:
 
       - name: Deploy to Cloud Run
         run: |
-          SERVICE_NAME="${{ inputs.app_name }}-${{ inputs.environment }}"
+          # For multi-backend apps, include service name; for single backend, use app_name
+          if [ -n "${{ inputs.service_name }}" ]; then
+            SERVICE_NAME="${{ inputs.app_name }}-${{ inputs.service_name }}-${{ inputs.environment }}"
+          else
+            SERVICE_NAME="${{ inputs.app_name }}-${{ inputs.environment }}"
+          fi
 
           # ── Env vars (non-secret config) ────────────────────────────────────
           ENV_VARS="ENVIRONMENT=${{ inputs.environment }},APP_NAME=${{ inputs.app_name }},FRONTEND_URL=${{ inputs.frontend_url }}"
@@ -201,7 +216,11 @@ jobs:
       - name: Get deployed URL
         id: url
         run: |
-          SERVICE_NAME="${{ inputs.app_name }}-${{ inputs.environment }}"
+          if [ -n "${{ inputs.service_name }}" ]; then
+            SERVICE_NAME="${{ inputs.app_name }}-${{ inputs.service_name }}-${{ inputs.environment }}"
+          else
+            SERVICE_NAME="${{ inputs.app_name }}-${{ inputs.environment }}"
+          fi
           URL=$(gcloud run services describe "$SERVICE_NAME" \
             --region=${{ inputs.region }} \
             --project=${{ inputs.platform_project }} \

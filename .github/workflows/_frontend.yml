@@ -56,6 +56,11 @@ on:
         required: false
         default: ""
         description: "Custom domain for the app — used as the output URL when sso=true."
+      primary_backend_service:
+        type: string
+        required: false
+        default: ""
+        description: "Cloud Run service name of the primary backend for /api/** routing. Empty = use {app_name}-{environment}."
     outputs:
       url:
         description: "Deployed frontend URL"
@@ -153,7 +158,12 @@ jobs:
         if: inputs.sso != 'true'
         run: |
           SITE_NAME="${{ inputs.site_id != '' && inputs.site_id || format('{0}-{1}', inputs.app_name, inputs.environment) }}"
-          CLOUD_RUN_SERVICE="${{ inputs.app_name }}-${{ inputs.environment }}"
+          # Use explicit primary backend service name if provided (multi-backend), else default
+          if [ -n "${{ inputs.primary_backend_service }}" ]; then
+            CLOUD_RUN_SERVICE="${{ inputs.primary_backend_service }}"
+          else
+            CLOUD_RUN_SERVICE="${{ inputs.app_name }}-${{ inputs.environment }}"
+          fi
           if [ "${{ inputs.has_backend }}" = "true" ]; then
             if [ "${{ inputs.frontend_framework }}" = "static" ]; then
               cat > firebase.json << EOF

@@ -17,6 +17,12 @@ moved {
   to   = google_cloud_run_v2_service_iam_member.public[0]
 }
 
+# State migration: google_cloud_run_v2_service.app now uses count for multi-backend support
+moved {
+  from = google_cloud_run_v2_service.app
+  to   = google_cloud_run_v2_service.app[0]
+}
+
 # StackRamp Per-App Infrastructure
 # Run idempotently on every deploy to ensure app infra exists.
 # Creates Firebase Hosting site + Cloud Run service for the app.
@@ -86,6 +92,13 @@ locals {
 
   # IAP member — domain:example.com or allAuthenticatedUsers
   iap_member = (var.iap_allowed_domain == "" || var.iap_allowed_domain == "*") ? "allAuthenticatedUsers" : "domain:${var.iap_allowed_domain}"
+
+  # Multi-backend: detect which mode we're in
+  is_multi_backend = length(var.backend_services) > 0
+  # Primary backend service name for SSO URL map routing
+  primary_backend_key = local.is_multi_backend ? (var.primary_backend_name != "" ? var.primary_backend_name : sort(keys(var.backend_services))[0]) : ""
+  # Primary backend Cloud Run service name for NEG/LB
+  primary_backend_cr_name = local.is_multi_backend ? google_cloud_run_v2_service.backends[local.primary_backend_key].name : (length(google_cloud_run_v2_service.app) > 0 ? google_cloud_run_v2_service.app[0].name : "")
 }
 
 # Apex domain: A records pointing at Firebase's stable load-balancer IPs
@@ -111,10 +124,12 @@ resource "google_dns_record_set" "frontend_cname" {
   rrdatas      = ["${google_firebase_hosting_site.app[0].site_id}.web.app."]
 }
 
-# ── Cloud Run Service ─────────────────────────────────────────────────────────
-# Creates the service shell — actual deployment is done by the workflow
+# ── Cloud Run Service (single backend — backwards compatible) ─────────────────
+# Creates the service shell — actual deployment is done by the workflow.
+# Used when backend_services is empty (single backend or legacy config).
 
 resource "google_cloud_run_v2_service" "app" {
+  count               = length(var.backend_services) == 0 ? 1 : 0
   name                = "${var.app_name}-${var.environment}"
   location            = var.region
   project             = var.platform_project
@@ -143,12 +158,60 @@ resource "google_cloud_run_v2_service" "app" {
   }
 }
 
-# Allow unauthenticated access (non-SSO apps only)
+# Allow unauthenticated access — single backend (non-SSO apps only)
 resource "google_cloud_run_v2_service_iam_member" "public" {
-  count    = var.has_sso ? 0 : 1
+  count    = !var.has_sso && length(var.backend_services) == 0 ? 1 : 0
   project  = var.platform_project
   location = var.region
-  name     = google_cloud_run_v2_service.app.name
+  name     = google_cloud_run_v2_service.app[0].name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}
+
+# ── Cloud Run Services (multiple backends) ───────────────────────────────────
+# Creates a Cloud Run service shell per named backend. Each gets its own
+# independent service for scaling, language, and resource configuration.
+
+resource "google_cloud_run_v2_service" "backends" {
+  for_each            = var.backend_services
+  name                = "${var.app_name}-${each.key}-${var.environment}"
+  location            = var.region
+  project             = var.platform_project
+  deletion_protection = false
+
+  template {
+    containers {
+      image = "us-docker.pkg.dev/cloudrun/container/hello"
+
+      env {
+        name  = "ENVIRONMENT"
+        value = var.environment
+      }
+      env {
+        name  = "APP_NAME"
+        value = var.app_name
+      }
+      env {
+        name  = "SERVICE_NAME"
+        value = each.key
+      }
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      template[0].containers[0].image,
+      template[0].containers[0].env,
+    ]
+  }
+}
+
+# Allow unauthenticated access — multi-backend (non-SSO apps only)
+resource "google_cloud_run_v2_service_iam_member" "backends_public" {
+  for_each = !var.has_sso ? var.backend_services : {}
+  project  = var.platform_project
+  location = var.region
+  name     = google_cloud_run_v2_service.backends[each.key].name
   role     = "roles/run.invoker"
   member   = "allUsers"
 }
@@ -199,11 +262,22 @@ resource "google_cloud_run_v2_service_iam_member" "iap_frontend_invoker" {
 }
 
 # IAP SA invoker on backend — IAP requires run.invoker even when Cloud Run allows allUsers
+# Single backend mode
 resource "google_cloud_run_v2_service_iam_member" "iap_backend_invoker" {
-  count    = var.has_sso ? 1 : 0
+  count    = var.has_sso && length(var.backend_services) == 0 ? 1 : 0
   project  = var.platform_project
   location = var.region
-  name     = google_cloud_run_v2_service.app.name
+  name     = google_cloud_run_v2_service.app[0].name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-iap.iam.gserviceaccount.com"
+}
+
+# Multi-backend mode: IAP SA invoker for each backend
+resource "google_cloud_run_v2_service_iam_member" "iap_backends_invoker" {
+  for_each = var.has_sso ? var.backend_services : {}
+  project  = var.platform_project
+  location = var.region
+  name     = google_cloud_run_v2_service.backends[each.key].name
   role     = "roles/run.invoker"
   member   = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-iap.iam.gserviceaccount.com"
 }
@@ -269,7 +343,7 @@ resource "google_compute_region_network_endpoint_group" "backend_neg" {
   project               = var.platform_project
 
   cloud_run {
-    service = google_cloud_run_v2_service.app.name
+    service = local.primary_backend_cr_name
   }
 }
 
