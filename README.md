@@ -53,9 +53,15 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, closed]
+  workflow_dispatch:
 
 jobs:
   deploy:
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
     uses: bobbydeveaux/stackramp/.github/workflows/platform.yml@main
     secrets: inherit
 ```
@@ -64,10 +70,11 @@ jobs:
 
 That's it. The platform:
 - Detects what changed (frontend, backend, or both)
-- Builds your app
-- Provisions cloud infrastructure (idempotently)
-- Deploys and returns live URLs
-- On PRs: creates preview deployments with URLs posted as comments
+- Builds your app using platform-provided or custom Dockerfiles
+- Provisions cloud infrastructure (idempotently via Terraform)
+- Deploys to dev, then promotes to prod on main
+- On PRs: creates isolated preview environments (`{app}-pr-{number}`) with URLs posted as comments
+- On PR close: automatically cleans up preview Cloud Run services and Firebase channels
 
 **No GCP console. No Terraform. No secrets. No YAML beyond the above.**
 
@@ -88,11 +95,14 @@ Platform config lives in GitHub Variables (not secrets):
 
 | Variable | Example |
 |----------|---------|
-| `STACKRAMP_PROVIDER` | `gcp` |
 | `STACKRAMP_PROJECT` | `my-platform-dev` |
 | `STACKRAMP_REGION` | `europe-west1` |
 | `STACKRAMP_WIF_PROVIDER` | `projects/123/locations/global/...` |
 | `STACKRAMP_SA_EMAIL` | `stackramp-cicd-sa@project.iam...` |
+| `STACKRAMP_DNS_ZONE` | `yourdomain-com` |
+| `STACKRAMP_BASE_DOMAIN` | `yourdomain.com` |
+| `STACKRAMP_IAP_DOMAIN` | `yourdomain.com` (for SSO) |
+| `STACKRAMP_CLOUDSQL_CONNECTION` | `project:region:instance` |
 
 ## Quick Start
 
@@ -143,26 +153,32 @@ See the [Provider Interface](providers/interface.md) for details.
 ```
 bobbydeveaux/stackramp/
 ├── README.md
-├── stackramp.yaml.example
+├── INTEGRATION.md                    ← full integration guide
 ├── .github/workflows/
-│   └── platform.yml              ← public entry point
+│   ├── platform.yml                  ← public entry point
+│   ├── _frontend.yml                 ← reusable: frontend deploy
+│   ├── _backend.yml                  ← reusable: backend deploy
+│   └── _cleanup-preview.yml          ← reusable: PR preview cleanup
 ├── platform-action/
-│   ├── action.yml                ← config parser
-│   ├── schema.json               ← validation schema
-│   └── dockerfiles/              ← default Dockerfiles
+│   ├── action.yml                    ← config parser
+│   ├── schema.json                   ← validation schema
+│   └── dockerfiles/                  ← default Dockerfiles (Python, Go, Node)
 ├── providers/
-│   ├── interface.md              ← provider contract
+│   ├── interface.md                  ← provider contract
 │   └── gcp/
-│       ├── terraform/bootstrap/  ← one-time setup
-│       ├── terraform/platform/   ← per-app infra
-│       └── workflows/            ← GCP-specific actions
+│       ├── terraform/bootstrap/      ← one-time platform setup
+│       ├── terraform/platform/       ← per-app infra (Cloud Run, Firebase, IAP, DNS, GCS)
+│       └── workflows/                ← GCP-specific actions
+├── dashboard/                        ← StackRamp monitoring dashboard (dogfooded)
+│   ├── backend/                      ← Go API — Cloud Run + Cloud DNS
+│   └── frontend/                     ← React dashboard
 ├── docs/
 │   ├── PRD.md
 │   ├── HLD.md
 │   ├── getting-started.md
 │   ├── stackramp-yaml-reference.md
 │   └── operator-guide.md
-└── example-app/                  ← working example
+└── example-app/                      ← working example
 ```
 
 ## Supported Runtimes
@@ -192,8 +208,10 @@ Custom `Dockerfile` in your backend directory is always supported as an override
 - [x] Cloud SQL (Postgres) with `DATABASE_URL` injected via Secret Manager
 - [x] Platform secrets auto-injected from Secret Manager (label-based)
 - [x] SSO via GCP IAP — Global HTTPS LB + Identity-Aware Proxy, opt-in per app
+- [x] PR preview environments — isolated per PR, auto-cleanup on close
+- [x] Deploy status dashboard — dogfooded on the platform at dashboard.stackramp.io
 - [ ] AWS provider
-- [ ] Deploy status dashboard
+- [ ] Documentation website
 
 ## License
 
