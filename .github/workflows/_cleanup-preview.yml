@@ -46,11 +46,23 @@ jobs:
           PR_NUM="${{ github.event.number }}"
           ENV="pr-${PR_NUM}"
 
-          # Delete backend preview service (if it exists)
+          # Delete backend preview service (if it exists) — single backend mode
           if gcloud run services describe "${APP_NAME}-${ENV}" --region="$REGION" --project="$PROJECT" 2>/dev/null; then
             echo "Deleting backend preview: ${APP_NAME}-${ENV}"
             gcloud run services delete "${APP_NAME}-${ENV}" --region="$REGION" --project="$PROJECT" --quiet
           fi
+
+          # Delete multi-backend preview services (if they exist)
+          # List all Cloud Run services matching the app name pattern for this PR
+          MULTI_SERVICES=$(gcloud run services list \
+            --region="$REGION" \
+            --project="$PROJECT" \
+            --filter="metadata.name~'^${APP_NAME}-.*-${ENV}$'" \
+            --format="value(metadata.name)" 2>/dev/null || true)
+          for SVC in $MULTI_SERVICES; do
+            echo "Deleting multi-backend preview: $SVC"
+            gcloud run services delete "$SVC" --region="$REGION" --project="$PROJECT" --quiet
+          done
 
           # Delete frontend SSO preview service (if it exists)
           if gcloud run services describe "${APP_NAME}-fe-${ENV}" --region="$REGION" --project="$PROJECT" 2>/dev/null; then

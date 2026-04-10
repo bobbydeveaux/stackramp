@@ -66,3 +66,15 @@ variable "iap_allowed_domain" {
   type        = string
   default     = ""
 }
+
+variable "backend_services" {
+  description = "Map of additional backend service names for multi-backend apps. Empty = single backend (backwards compatible). Keys are service names, values are unused (set to true)."
+  type        = map(bool)
+  default     = {}
+}
+
+variable "primary_backend_name" {
+  description = "Name of the primary backend service (for multi-backend apps). Used for /api/** routing in the SSO load balancer. Defaults to first key alphabetically."
+  type        = string
+  default     = ""
+}

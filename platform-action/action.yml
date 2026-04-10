@@ -24,14 +24,23 @@ outputs:
     description: "Whether the app has a backend"
     value: ${{ steps.parse.outputs.has_backend }}
   backend_language:
-    description: "Backend language (python, go, node, none)"
+    description: "Backend language (python, go, node, none) — primary backend for backwards compat"
     value: ${{ steps.parse.outputs.backend_language }}
   backend_dir:
-    description: "Backend directory"
+    description: "Backend directory — primary backend for backwards compat"
     value: ${{ steps.parse.outputs.backend_dir }}
   backend_port:
-    description: "Backend port"
+    description: "Backend port — primary backend for backwards compat"
     value: ${{ steps.parse.outputs.backend_port }}
+  backends_json:
+    description: "JSON array of backend service configs [{name, language, dir, port, memory, cpu, primary, env}]"
+    value: ${{ steps.parse.outputs.backends_json }}
+  backend_names:
+    description: "Comma-separated list of backend service names"
+    value: ${{ steps.parse.outputs.backend_names }}
+  primary_backend:
+    description: "Name of the primary backend service (handles /api/** routing)"
+    value: ${{ steps.parse.outputs.primary_backend }}
   has_database:
     description: "Whether the app uses a database"
     value: ${{ steps.parse.outputs.has_database }}
@@ -80,9 +89,6 @@ runs:
 
         FRONTEND_FRAMEWORK=$(yq '.frontend.framework // "none"' "$CONFIG")
         FRONTEND_DIR=$(yq '.frontend.dir // "frontend"' "$CONFIG")
-        BACKEND_LANG=$(yq '.backend.language // "none"' "$CONFIG")
-        BACKEND_DIR=$(yq '.backend.dir // "backend"' "$CONFIG")
-        BACKEND_PORT=$(yq '.backend.port // 8080' "$CONFIG")
         DATABASE=$(yq '.database // false' "$CONFIG")
         PROVIDER="${STACKRAMP_PROVIDER:-$(yq '.provider.cloud // "gcp"' "$CONFIG")}"
 
@@ -99,12 +105,81 @@ runs:
         HAS_FRONTEND="false"
         [ "$FRONTEND_FRAMEWORK" != "none" ] && [ "$FRONTEND_FRAMEWORK" != "null" ] && HAS_FRONTEND="true"
 
+        # ── Parse backends (plural) or backend (singular, backwards-compatible) ──
+        HAS_BACKENDS=$(yq '.backends // "" | type' "$CONFIG")
+        HAS_SINGULAR=$(yq '.backend // "" | type' "$CONFIG")
+
+        BACKENDS_JSON="[]"
         HAS_BACKEND="false"
-        [ "$BACKEND_LANG" != "none" ] && [ "$BACKEND_LANG" != "null" ] && HAS_BACKEND="true"
+
+        if [ "$HAS_BACKENDS" = "!!map" ]; then
+          # New plural format: backends: { api: {...}, predictor: {...} }
+          BACKENDS_JSON=$(yq -o=json '[.backends | to_entries[] | {
+            "name": .key,
+            "language": (.value.language // "none"),
+            "dir": (.value.dir // .key),
+            "port": (.value.port // 8080),
+            "memory": (.value.memory // "512Mi"),
+            "cpu": (.value.cpu // "1"),
+            "primary": (.value.primary // false),
+            "env": (.value.env // {})
+          }]' "$CONFIG")
+
+          BACKEND_COUNT=$(echo "$BACKENDS_JSON" | yq '. | length')
+          if [ "$BACKEND_COUNT" -gt 0 ]; then
+            HAS_BACKEND="true"
+
+            # Check if any backend has language != "none"
+            ALL_NONE=$(echo "$BACKENDS_JSON" | yq '[.[].language] | all_c(. == "none")')
+            [ "$ALL_NONE" = "true" ] && HAS_BACKEND="false"
+          fi
+
+          # Determine primary: explicitly marked, or first entry
+          PRIMARY=$(echo "$BACKENDS_JSON" | yq '[.[] | select(.primary == true)] | .[0].name // ""')
+          if [ -z "$PRIMARY" ] || [ "$PRIMARY" = "null" ]; then
+            PRIMARY=$(echo "$BACKENDS_JSON" | yq '.[0].name')
+          fi
+
+        elif [ "$HAS_SINGULAR" = "!!map" ]; then
+          # Legacy singular format: backend: { language: python, ... }
+          BACKEND_LANG=$(yq '.backend.language // "none"' "$CONFIG")
+          BACKEND_DIR=$(yq '.backend.dir // "backend"' "$CONFIG")
+          BACKEND_PORT=$(yq '.backend.port // 8080' "$CONFIG")
+          BACKEND_MEMORY=$(yq '.backend.memory // "512Mi"' "$CONFIG")
+          BACKEND_CPU=$(yq '.backend.cpu // "1"' "$CONFIG")
+
+          if [ "$BACKEND_LANG" != "none" ] && [ "$BACKEND_LANG" != "null" ]; then
+            HAS_BACKEND="true"
+            BACKENDS_JSON=$(cat <<EOJSON
+        [{"name":"backend","language":"${BACKEND_LANG}","dir":"${BACKEND_DIR}","port":${BACKEND_PORT},"memory":"${BACKEND_MEMORY}","cpu":"${BACKEND_CPU}","primary":true,"env":{}}]
+        EOJSON
+            )
+          fi
+          PRIMARY="backend"
+        else
+          PRIMARY=""
+        fi
 
         if [ "$HAS_FRONTEND" = "false" ] && [ "$HAS_BACKEND" = "false" ]; then
-          echo "::error::stackramp.yaml must define at least one of frontend or backend."
+          echo "::error::stackramp.yaml must define at least one of frontend, backend, or backends."
           exit 1
+        fi
+
+        # Extract primary backend fields for backwards compatibility
+        if [ "$HAS_BACKEND" = "true" ]; then
+          BACKEND_LANG=$(echo "$BACKENDS_JSON" | yq "[.[] | select(.name == \"${PRIMARY}\")] | .[0].language")
+          BACKEND_DIR=$(echo "$BACKENDS_JSON" | yq "[.[] | select(.name == \"${PRIMARY}\")] | .[0].dir")
+          BACKEND_PORT=$(echo "$BACKENDS_JSON" | yq "[.[] | select(.name == \"${PRIMARY}\")] | .[0].port")
+        else
+          BACKEND_LANG="none"
+          BACKEND_DIR="backend"
+          BACKEND_PORT="8080"
+        fi
+
+        # Build comma-separated list of backend names
+        BACKEND_NAMES=""
+        if [ "$HAS_BACKEND" = "true" ]; then
+          BACKEND_NAMES=$(echo "$BACKENDS_JSON" | yq '[.[].name] | join(",")')
         fi
 
         HAS_DATABASE="false"
@@ -132,6 +207,9 @@ runs:
         echo "backend_language=$BACKEND_LANG" >> $GITHUB_OUTPUT
         echo "backend_dir=$BACKEND_DIR" >> $GITHUB_OUTPUT
         echo "backend_port=$BACKEND_PORT" >> $GITHUB_OUTPUT
+        echo "backends_json=$BACKENDS_JSON" >> $GITHUB_OUTPUT
+        echo "backend_names=$BACKEND_NAMES" >> $GITHUB_OUTPUT
+        echo "primary_backend=$PRIMARY" >> $GITHUB_OUTPUT
         echo "has_database=$HAS_DATABASE" >> $GITHUB_OUTPUT
         echo "provider=$PROVIDER" >> $GITHUB_OUTPUT
         echo "has_storage=$HAS_STORAGE" >> $GITHUB_OUTPUT
@@ -141,7 +219,9 @@ runs:
 
         echo "App: $APP_NAME"
         echo "Frontend: $FRONTEND_FRAMEWORK ($FRONTEND_DIR)"
-        echo "Backend: $BACKEND_LANG ($BACKEND_DIR:$BACKEND_PORT)"
+        echo "Backend (primary): $BACKEND_LANG ($BACKEND_DIR:$BACKEND_PORT)"
+        echo "Backends: $BACKEND_NAMES"
+        echo "Primary backend: $PRIMARY"
         echo "Database: $DATABASE"
         echo "Storage: $STORAGE"
         echo "SSO: $HAS_SSO"

@@ -12,7 +12,7 @@ frontend:
   node_version: "20"   # optional, defaults to 20 (or reads .nvmrc)
 
 backend:
-  language: python     # python | go | node | none
+  language: python     # python | go | node | rust | none
   dir: backend         # directory containing your backend code (default: backend)
   port: 8080           # port your app listens on (default: 8080)
   memory: 512Mi        # Cloud Run memory (default: 512Mi)
@@ -21,3 +21,22 @@ backend:
 database: false        # false | postgres | mysql (Phase 2)
 
 # storage: gcs         # false | gcs — provisions a GCS bucket + injects GCS_BUCKET env var
+
+# ─── Multi-backend example ───────────────────────────────────────────────────
+# Replace the single 'backend:' block above with 'backends:' (plural) to
+# deploy multiple independent services. Each gets its own Cloud Run service.
+#
+# backends:
+#   api:
+#     language: rust
+#     dir: backend
+#     port: 8080
+#     primary: true                       # handles /api/** routing from frontend
+#     env:
+#       PREDICTOR_URL: ${backends.predictor.url}   # auto-resolved service discovery
+#   predictor:
+#     language: python
+#     dir: predictor
+#     port: 8085
+#     memory: 1Gi
+#     cpu: "2"
