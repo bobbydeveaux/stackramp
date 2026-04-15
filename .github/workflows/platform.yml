@@ -61,6 +61,7 @@ jobs:
       has_storage: ${{ steps.config.outputs.has_storage }}
       storage_type: ${{ steps.config.outputs.storage_type }}
       has_sso: ${{ steps.config.outputs.has_sso }}
+      iam_bindings: ${{ steps.config.outputs.iam_bindings }}
 
     steps:
       - uses: actions/checkout@v4
@@ -155,6 +156,12 @@ jobs:
             -var=has_sso=${HAS_SSO} \
             -var=iap_allowed_domain=${{ vars.STACKRAMP_IAP_DOMAIN || '' }}"
 
+          # Cross-project IAM bindings (JSON array from stackramp.yaml)
+          IAM_BINDINGS='${{ needs.parse-config.outputs.iam_bindings }}'
+          if [ "$IAM_BINDINGS" != "[]" ] && [ -n "$IAM_BINDINGS" ]; then
+            TF_VARS="$TF_VARS -var=iam_bindings=${IAM_BINDINGS}"
+          fi
+
           terraform apply -auto-approve $TF_VARS
 
       - name: Capture dev outputs
@@ -196,6 +203,12 @@ jobs:
             -var=cloudsql_connection_name=${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }} \
             -var=has_sso=${HAS_SSO} \
             -var=iap_allowed_domain=${{ vars.STACKRAMP_IAP_DOMAIN || '' }}"
+
+          # Cross-project IAM bindings (JSON array from stackramp.yaml)
+          IAM_BINDINGS='${{ needs.parse-config.outputs.iam_bindings }}'
+          if [ "$IAM_BINDINGS" != "[]" ] && [ -n "$IAM_BINDINGS" ]; then
+            TF_VARS="$TF_VARS -var=iam_bindings=${IAM_BINDINGS}"
+          fi
 
           terraform apply -auto-approve $TF_VARS
 

@@ -21,3 +21,14 @@ backend:
 database: false        # false | postgres | mysql (Phase 2)
 
 # storage: gcs         # false | gcs — provisions a GCS bucket + injects GCS_BUCKET env var
+
+# Cross-project IAM bindings — grant the Cloud Run service account roles
+# on external projects (e.g. for BigQuery access in another project):
+#
+# backend:
+#   iam:
+#     - role: roles/bigquery.dataViewer
+#       project: other-project-id
+#       resource: datasets/my_dataset   # optional — omit for project-level
+#     - role: roles/bigquery.jobUser
+#       project: other-project-id

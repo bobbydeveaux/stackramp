@@ -66,3 +66,13 @@ variable "iap_allowed_domain" {
   type        = string
   default     = ""
 }
+
+variable "iam_bindings" {
+  description = "Cross-project IAM bindings for the Cloud Run service account. Each entry grants a role on a target project, optionally scoped to a specific resource (e.g. BigQuery dataset)."
+  type = list(object({
+    role     = string
+    project  = string
+    resource = optional(string, "")
+  }))
+  default = []
+}

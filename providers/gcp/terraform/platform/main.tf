@@ -497,3 +497,45 @@ resource "google_secret_manager_secret_iam_member" "database_url_run_access" {
   member    = "serviceAccount:${data.google_project.project.number}-compute@developer.gserviceaccount.com"
 }
 
+# ── Cross-Project IAM Bindings ────────────────────────────────────────────────
+# Grants the Cloud Run service account (default compute SA) IAM roles on
+# external projects or resources. Supports both project-level bindings
+# (google_project_iam_member) and BigQuery dataset-level bindings
+# (google_bigquery_dataset_iam_member).
+#
+# Prerequisite: the deploying WIF identity needs roles/iam.securityAdmin
+# (or equivalent) on each target project listed in the bindings.
+
+locals {
+  # Split bindings into project-level and dataset-level
+  iam_project_bindings = [
+    for b in var.iam_bindings : b if b.resource == ""
+  ]
+  iam_dataset_bindings = [
+    for b in var.iam_bindings : b if startswith(b.resource, "datasets/")
+  ]
+}
+
+resource "google_project_iam_member" "cross_project" {
+  for_each = {
+    for idx, b in local.iam_project_bindings :
+    "${b.project}--${b.role}" => b
+  }
+
+  project = each.value.project
+  role    = each.value.role
+  member  = "serviceAccount:${data.google_project.project.number}-compute@developer.gserviceaccount.com"
+}
+
+resource "google_bigquery_dataset_iam_member" "cross_project" {
+  for_each = {
+    for idx, b in local.iam_dataset_bindings :
+    "${b.project}--${b.resource}--${b.role}" => b
+  }
+
+  project    = each.value.project
+  dataset_id = trimprefix(each.value.resource, "datasets/")
+  role       = each.value.role
+  member     = "serviceAccount:${data.google_project.project.number}-compute@developer.gserviceaccount.com"
+}
+

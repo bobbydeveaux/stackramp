@@ -50,6 +50,9 @@ outputs:
   has_sso:
     description: "Whether SSO (IAP) is enabled for this app"
     value: ${{ steps.parse.outputs.has_sso }}
+  iam_bindings:
+    description: "JSON array of cross-project IAM bindings from backend.iam"
+    value: ${{ steps.parse.outputs.iam_bindings }}
 
 runs:
   using: "composite"
@@ -119,6 +122,14 @@ runs:
           STORAGE_TYPE="false"
         fi
 
+        # Cross-project IAM bindings
+        IAM_COUNT=$(yq '.backend.iam | length // 0' "$CONFIG")
+        if [ "$IAM_COUNT" -gt 0 ] && [ "$IAM_COUNT" != "null" ]; then
+          IAM_BINDINGS=$(yq -o=json -I=0 '.backend.iam' "$CONFIG")
+        else
+          IAM_BINDINGS="[]"
+        fi
+
         FRONTEND_SSO=$(yq '.frontend.sso // false' "$CONFIG")
         BACKEND_SSO=$(yq '.backend.sso // false' "$CONFIG")
         HAS_SSO="false"
@@ -138,6 +149,7 @@ runs:
         echo "storage_type=$STORAGE_TYPE" >> $GITHUB_OUTPUT
         echo "custom_domain=$CUSTOM_DOMAIN" >> $GITHUB_OUTPUT
         echo "has_sso=$HAS_SSO" >> $GITHUB_OUTPUT
+        echo "iam_bindings=$IAM_BINDINGS" >> $GITHUB_OUTPUT
 
         echo "App: $APP_NAME"
         echo "Frontend: $FRONTEND_FRAMEWORK ($FRONTEND_DIR)"
@@ -145,4 +157,5 @@ runs:
         echo "Database: $DATABASE"
         echo "Storage: $STORAGE"
         echo "SSO: $HAS_SSO"
+        echo "IAM bindings: $IAM_BINDINGS"
         echo "Provider: $PROVIDER"

@@ -51,6 +51,30 @@
         "cpu": {
           "type": "string",
           "default": "1"
+        },
+        "iam": {
+          "type": "array",
+          "description": "Cross-project IAM bindings for the Cloud Run service account",
+          "items": {
+            "type": "object",
+            "required": ["role", "project"],
+            "properties": {
+              "role": {
+                "type": "string",
+                "description": "IAM role to grant (e.g. roles/bigquery.dataViewer)",
+                "pattern": "^roles/[a-zA-Z.]+$"
+              },
+              "project": {
+                "type": "string",
+                "description": "Target GCP project ID for the binding"
+              },
+              "resource": {
+                "type": "string",
+                "description": "Optional resource path for resource-level bindings (e.g. datasets/my_dataset for BigQuery dataset-level grants)"
+              }
+            },
+            "additionalProperties": false
+          }
         }
       }
     },

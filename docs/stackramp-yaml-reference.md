@@ -178,6 +178,41 @@ Memory allocation for the backend service. Examples: `256Mi`, `512Mi`, `1Gi`, `2
 
 CPU allocation for the backend service. Examples: `1`, `2`, `4`.
 
+#### `backend.iam` (optional)
+
+| | |
+|---|---|
+| Type | `array` of objects |
+| Default | `[]` (no cross-project bindings) |
+
+Cross-project IAM bindings for the Cloud Run service account. Each entry grants an IAM role on a target GCP project or resource. This is useful when your backend needs to access resources in a different project (e.g. BigQuery datasets, Cloud Storage buckets).
+
+Each entry has the following fields:
+
+| Field | Required | Description |
+|---|---|---|
+| `role` | Yes | IAM role to grant (e.g. `roles/bigquery.dataViewer`, `roles/bigquery.jobUser`) |
+| `project` | Yes | Target GCP project ID |
+| `resource` | No | Resource path for resource-level bindings. Currently supports `datasets/{dataset_id}` for BigQuery dataset-level grants. Omit for project-level bindings. |
+
+**Prerequisites:** The deploying Workload Identity Federation (WIF) service account must have `roles/iam.securityAdmin` or equivalent on each target project.
+
+**Example:**
+```yaml
+name: my-api
+
+backend:
+  language: rust
+  dir: backend
+  port: 8080
+  iam:
+    - role: roles/bigquery.dataViewer
+      project: data-warehouse-prod
+      resource: datasets/analytics    # dataset-level binding
+    - role: roles/bigquery.jobUser
+      project: data-warehouse-prod    # project-level binding
+```
+
 ---
 
 ### `database`
