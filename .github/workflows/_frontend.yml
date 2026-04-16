@@ -113,6 +113,7 @@ jobs:
           VITE_API_URL: ${{ inputs.backend_url }}
         run: |
           cd ${{ inputs.frontend_dir }}
+          mkdir -p public
           npm ci
           npm run build
 
