@@ -90,6 +90,7 @@ jobs:
           service_account: ${{ inputs.service_account }}
 
       - name: Detect Node version
+        if: inputs.frontend_framework != 'static'
         id: node-version
         run: |
           if [ -f "${{ inputs.frontend_dir }}/.nvmrc" ]; then
@@ -99,6 +100,7 @@ jobs:
           fi
 
       - name: Setup Node.js
+        if: inputs.frontend_framework != 'static'
         uses: actions/setup-node@v4
         with:
           node-version: ${{ steps.node-version.outputs.version }}
@@ -106,12 +108,20 @@ jobs:
           cache-dependency-path: "**/package-lock.json"
 
       - name: Install & Build
+        if: inputs.frontend_framework != 'static'
         env:
           VITE_API_URL: ${{ inputs.backend_url }}
         run: |
           cd ${{ inputs.frontend_dir }}
           npm ci
           npm run build
+
+      - name: Copy static files to dist
+        if: inputs.frontend_framework == 'static'
+        run: |
+          mkdir -p ${{ inputs.frontend_dir }}/dist
+          cp -r ${{ inputs.frontend_dir }}/* ${{ inputs.frontend_dir }}/dist/ 2>/dev/null || true
+          rm -rf ${{ inputs.frontend_dir }}/dist/dist
 
       # ── SSO path: Docker + Cloud Run ──────────────────────────────────────
       - name: Configure Docker (SSO)
