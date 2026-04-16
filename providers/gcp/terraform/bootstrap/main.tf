@@ -178,6 +178,12 @@ resource "google_project_iam_member" "default_compute_dns_reader" {
   member  = "serviceAccount:${data.google_project.platform.number}-compute@developer.gserviceaccount.com"
 }
 
+resource "google_project_iam_member" "default_compute_cloudsql_client" {
+  project = local.platform_project
+  role    = "roles/cloudsql.client"
+  member  = "serviceAccount:${data.google_project.platform.number}-compute@developer.gserviceaccount.com"
+}
+
 # ── Platform-Injectable Secrets ───────────────────────────────────────────────
 # Platform team creates the secret shell here; values are set manually in the
 # GCP Console. Any secret with the `platform-inject: true` label is automatically
