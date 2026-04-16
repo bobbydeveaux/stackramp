@@ -132,9 +132,14 @@ jobs:
         if: inputs.sso == 'true' && inputs.is_pr != 'true'
         run: |
           IMAGE="${{ inputs.region }}-docker.pkg.dev/${{ inputs.platform_project }}/stackramp-images/${{ inputs.app_name }}-fe:${{ github.sha }}"
+          if [ "${{ inputs.frontend_framework }}" = "next" ]; then
+            DOCKERFILE=".stackramp/platform-action/dockerfiles/node-next.Dockerfile"
+          else
+            DOCKERFILE=".stackramp/platform-action/dockerfiles/nginx-spa.Dockerfile"
+          fi
           docker build \
             -t "$IMAGE" \
-            -f .stackramp/platform-action/dockerfiles/nginx-spa.Dockerfile \
+            -f "$DOCKERFILE" \
             ${{ inputs.frontend_dir }}/
           docker push "$IMAGE"
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
@@ -143,11 +148,12 @@ jobs:
         if: inputs.sso == 'true' && inputs.is_pr != 'true'
         id: deploy-sso
         run: |
+          FRONTEND_PORT=${{ inputs.frontend_framework == 'next' && '3000' || '8080' }}
           gcloud run deploy "${{ inputs.app_name }}-fe-${{ inputs.environment }}" \
             --image="$IMAGE" \
             --region="${{ inputs.region }}" \
             --platform=managed \
-            --port=8080 \
+            --port=$FRONTEND_PORT \
             --allow-unauthenticated \
             --ingress=internal-and-cloud-load-balancing \
             --project="${{ inputs.platform_project }}"
