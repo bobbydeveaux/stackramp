@@ -149,6 +149,7 @@ jobs:
             -var=custom_domain=${CUSTOM_DOMAIN} \
             -var=backend_domain=${BACKEND_DOMAIN} \
             -var=dns_zone_name=${{ vars.STACKRAMP_DNS_ZONE || '' }} \
+            -var=has_backend=${{ needs.parse-config.outputs.has_backend == 'true' }} \
             -var=has_storage=${{ needs.parse-config.outputs.has_storage == 'true' }} \
             -var=has_database=${{ needs.parse-config.outputs.has_database == 'true' }} \
             -var=cloudsql_connection_name=${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }} \
@@ -191,6 +192,7 @@ jobs:
             -var=custom_domain=${CUSTOM_DOMAIN} \
             -var=backend_domain=${BACKEND_DOMAIN} \
             -var=dns_zone_name=${{ vars.STACKRAMP_DNS_ZONE || '' }} \
+            -var=has_backend=${{ needs.parse-config.outputs.has_backend == 'true' }} \
             -var=has_storage=${{ needs.parse-config.outputs.has_storage == 'true' }} \
             -var=has_database=${{ needs.parse-config.outputs.has_database == 'true' }} \
             -var=cloudsql_connection_name=${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }} \

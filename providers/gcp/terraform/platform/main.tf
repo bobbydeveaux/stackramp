@@ -17,6 +17,11 @@ moved {
   to   = google_cloud_run_v2_service_iam_member.public[0]
 }
 
+moved {
+  from = google_cloud_run_v2_service.app
+  to   = google_cloud_run_v2_service.app[0]
+}
+
 # StackRamp Per-App Infrastructure
 # Run idempotently on every deploy to ensure app infra exists.
 # Creates Firebase Hosting site + Cloud Run service for the app.
@@ -115,6 +120,7 @@ resource "google_dns_record_set" "frontend_cname" {
 # Creates the service shell — actual deployment is done by the workflow
 
 resource "google_cloud_run_v2_service" "app" {
+  count               = var.has_backend ? 1 : 0
   name                = "${var.app_name}-${var.environment}"
   location            = var.region
   project             = var.platform_project
@@ -145,10 +151,10 @@ resource "google_cloud_run_v2_service" "app" {
 
 # Allow unauthenticated access (non-SSO apps only)
 resource "google_cloud_run_v2_service_iam_member" "public" {
-  count    = var.has_sso ? 0 : 1
+  count    = var.has_backend && !var.has_sso ? 1 : 0
   project  = var.platform_project
   location = var.region
-  name     = google_cloud_run_v2_service.app.name
+  name     = google_cloud_run_v2_service.app[0].name
   role     = "roles/run.invoker"
   member   = "allUsers"
 }
@@ -200,10 +206,10 @@ resource "google_cloud_run_v2_service_iam_member" "iap_frontend_invoker" {
 
 # IAP SA invoker on backend — IAP requires run.invoker even when Cloud Run allows allUsers
 resource "google_cloud_run_v2_service_iam_member" "iap_backend_invoker" {
-  count    = var.has_sso ? 1 : 0
+  count    = var.has_sso && var.has_backend ? 1 : 0
   project  = var.platform_project
   location = var.region
-  name     = google_cloud_run_v2_service.app.name
+  name     = google_cloud_run_v2_service.app[0].name
   role     = "roles/run.invoker"
   member   = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-iap.iam.gserviceaccount.com"
 }
@@ -262,14 +268,14 @@ resource "google_compute_region_network_endpoint_group" "frontend_neg" {
 }
 
 resource "google_compute_region_network_endpoint_group" "backend_neg" {
-  count                 = var.has_sso ? 1 : 0
+  count                 = var.has_sso && var.has_backend ? 1 : 0
   name                  = "${var.app_name}-be-${var.environment}-neg"
   network_endpoint_type = "SERVERLESS"
   region                = var.region
   project               = var.platform_project
 
   cloud_run {
-    service = google_cloud_run_v2_service.app.name
+    service = google_cloud_run_v2_service.app[0].name
   }
 }
 
@@ -293,7 +299,7 @@ resource "google_compute_backend_service" "frontend_bs" {
 }
 
 resource "google_compute_backend_service" "backend_bs" {
-  count                 = var.has_sso ? 1 : 0
+  count                 = var.has_sso && var.has_backend ? 1 : 0
   name                  = "${var.app_name}-be-${var.environment}-bs"
   project               = var.platform_project
   protocol              = "HTTPS"
@@ -326,9 +332,12 @@ resource "google_compute_url_map" "app" {
     name            = "paths"
     default_service = google_compute_backend_service.frontend_bs[0].id
 
-    path_rule {
-      paths   = ["/api", "/api/*"]
-      service = google_compute_backend_service.backend_bs[0].id
+    dynamic "path_rule" {
+      for_each = var.has_backend ? [1] : []
+      content {
+        paths   = ["/api", "/api/*"]
+        service = google_compute_backend_service.backend_bs[0].id
+      }
     }
   }
 }
@@ -402,7 +411,7 @@ resource "google_iap_web_backend_service_iam_member" "frontend_access" {
 }
 
 resource "google_iap_web_backend_service_iam_member" "backend_access" {
-  count               = var.has_sso ? 1 : 0
+  count               = var.has_sso && var.has_backend ? 1 : 0
   project             = var.platform_project
   web_backend_service = google_compute_backend_service.backend_bs[0].name
   role                = "roles/iap.httpsResourceAccessor"

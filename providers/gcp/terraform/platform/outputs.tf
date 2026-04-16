@@ -14,7 +14,7 @@ output "frontend_url" {
 
 output "backend_url" {
   description = "Backend Cloud Run URI"
-  value       = google_cloud_run_v2_service.app.uri
+  value       = var.has_backend ? google_cloud_run_v2_service.app[0].uri : ""
 }
 
 output "lb_ip" {

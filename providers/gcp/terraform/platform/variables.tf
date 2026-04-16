@@ -37,6 +37,12 @@ variable "backend_domain" {
   default     = ""
 }
 
+variable "has_backend" {
+  description = "Whether the app has a backend service. When false, Cloud Run is not provisioned."
+  type        = bool
+  default     = false
+}
+
 variable "has_storage" {
   description = "Whether to provision a GCS bucket for this app"
   type        = bool
