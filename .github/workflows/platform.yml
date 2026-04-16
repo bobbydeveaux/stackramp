@@ -266,6 +266,7 @@ jobs:
       frontend_url: ${{ needs.provision.outputs.frontend_url_dev }}
       storage_bucket: ${{ needs.provision.outputs.storage_bucket_dev }}
       cloudsql_connection_name: ${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }}
+      vpc_connector: ${{ vars.STACKRAMP_VPC_CONNECTOR || '' }}
       database_secret_name: ${{ needs.provision.outputs.database_secret_name_dev }}
       sso: ${{ needs.parse-config.outputs.has_sso }}
 
@@ -323,5 +324,6 @@ jobs:
       frontend_url: ${{ needs.provision.outputs.frontend_url_prod }}
       storage_bucket: ${{ needs.provision.outputs.storage_bucket_prod }}
       cloudsql_connection_name: ${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }}
+      vpc_connector: ${{ vars.STACKRAMP_VPC_CONNECTOR || '' }}
       database_secret_name: ${{ needs.provision.outputs.database_secret_name_prod }}
       sso: ${{ needs.parse-config.outputs.has_sso }}

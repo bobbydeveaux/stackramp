@@ -48,6 +48,8 @@ resource "google_project_service" "apis" {
     "dns.googleapis.com",
     "compute.googleapis.com",
     "iap.googleapis.com",
+    "servicenetworking.googleapis.com",
+    "vpcaccess.googleapis.com",
   ])
 
   service            = each.value
@@ -94,6 +96,8 @@ resource "google_project_iam_member" "platform_roles" {
     "roles/storage.admin",
     "roles/dns.admin",
     "roles/compute.loadBalancerAdmin",
+    "roles/compute.networkAdmin",
+    "roles/vpcaccess.admin",
     "roles/iap.admin",
   ])
 
@@ -185,6 +189,58 @@ resource "google_secret_manager_secret_iam_member" "platform_run_access" {
   member    = "serviceAccount:${data.google_project.platform.number}-compute@developer.gserviceaccount.com"
 }
 
+# ── VPC Network (for Cloud SQL private IP) ───────────────────────────────────
+# Cloud SQL with private IP requires a VPC with service networking peering.
+# Cloud Run connects via a Serverless VPC Access Connector.
+
+resource "google_compute_network" "platform" {
+  count                           = var.enable_postgres ? 1 : 0
+  name                            = "stackramp-vpc-${var.environment}"
+  project                         = local.platform_project
+  routing_mode                    = "GLOBAL"
+  auto_create_subnetworks         = false
+  delete_default_routes_on_create = false
+  depends_on                      = [google_project_service.apis]
+}
+
+resource "google_compute_subnetwork" "platform" {
+  count                    = var.enable_postgres ? 1 : 0
+  name                     = "stackramp-subnet-${var.environment}"
+  project                  = local.platform_project
+  region                   = var.region
+  network                  = google_compute_network.platform[0].name
+  ip_cidr_range            = "10.0.0.0/20"
+  private_ip_google_access = true
+}
+
+resource "google_compute_global_address" "private_ip_range" {
+  count         = var.enable_postgres ? 1 : 0
+  name          = "stackramp-sql-private-ip-${var.environment}"
+  purpose       = "VPC_PEERING"
+  address_type  = "INTERNAL"
+  prefix_length = 16
+  network       = google_compute_network.platform[0].id
+}
+
+resource "google_service_networking_connection" "private_vpc" {
+  count                   = var.enable_postgres ? 1 : 0
+  network                 = google_compute_network.platform[0].id
+  service                 = "servicenetworking.googleapis.com"
+  reserved_peering_ranges = [google_compute_global_address.private_ip_range[0].name]
+}
+
+resource "google_vpc_access_connector" "platform" {
+  count         = var.enable_postgres ? 1 : 0
+  name          = "stackramp-vpc-${var.environment}"
+  project       = local.platform_project
+  region        = var.region
+  network       = google_compute_network.platform[0].name
+  ip_cidr_range = "10.8.0.0/28"
+  min_instances = 2
+  max_instances = 3
+  depends_on    = [google_project_service.apis]
+}
+
 # ── Shared Cloud SQL Postgres Instance ────────────────────────────────────────
 # One instance per environment, shared across all apps. Each app that declares
 # `database: postgres` in stackramp.yaml gets its own database + user within
@@ -205,12 +261,13 @@ resource "google_sql_database_instance" "platform" {
     }
 
     ip_configuration {
-      ipv4_enabled = true
+      ipv4_enabled    = false
+      private_network = google_compute_network.platform[0].id
     }
   }
 
   deletion_protection = true
-  depends_on          = [google_project_service.apis]
+  depends_on          = [google_service_networking_connection.private_vpc]
 }
 
 resource "google_service_account_iam_member" "wif_binding" {

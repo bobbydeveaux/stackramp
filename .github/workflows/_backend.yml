@@ -60,6 +60,11 @@ on:
         required: false
         default: ""
         description: "Cloud SQL instance connection name (project:region:instance). Required when the app has a database."
+      vpc_connector:
+        type: string
+        required: false
+        default: ""
+        description: "Serverless VPC Access Connector name for Cloud SQL private IP connectivity."
       database_secret_name:
         type: string
         required: false
@@ -194,6 +199,7 @@ jobs:
             DEPLOY_FLAGS+=(--allow-unauthenticated --ingress=all)
           fi
           [ -n "$SECRET_REFS" ] && DEPLOY_FLAGS+=(--set-secrets="$SECRET_REFS")
+          [ -n "${{ inputs.vpc_connector }}" ] && DEPLOY_FLAGS+=(--vpc-connector="${{ inputs.vpc_connector }}" --vpc-egress=private-ranges-only)
           [ -n "${{ inputs.cloudsql_connection_name }}" ] && DEPLOY_FLAGS+=(--add-cloudsql-instances="${{ inputs.cloudsql_connection_name }}")
 
           gcloud run deploy "$SERVICE_NAME" "${DEPLOY_FLAGS[@]}"
