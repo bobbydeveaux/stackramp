@@ -162,6 +162,16 @@ data "google_project" "platform" {
   depends_on = [google_project_service.apis]
 }
 
+# ── Default Compute SA Permissions ──────────────────────────────────────────
+# The default compute SA runs Cloud Run services. Grant it read access to
+# list/describe Cloud Run services (needed by the dashboard).
+
+resource "google_project_iam_member" "default_compute_run_viewer" {
+  project = local.platform_project
+  role    = "roles/run.viewer"
+  member  = "serviceAccount:${data.google_project.platform.number}-compute@developer.gserviceaccount.com"
+}
+
 # ── Platform-Injectable Secrets ───────────────────────────────────────────────
 # Platform team creates the secret shell here; values are set manually in the
 # GCP Console. Any secret with the `platform-inject: true` label is automatically
