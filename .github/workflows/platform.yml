@@ -61,6 +61,7 @@ jobs:
       has_storage: ${{ steps.config.outputs.has_storage }}
       storage_type: ${{ steps.config.outputs.storage_type }}
       has_sso: ${{ steps.config.outputs.has_sso }}
+      frontend_spa: ${{ steps.config.outputs.frontend_spa }}
 
     steps:
       - uses: actions/checkout@v4
@@ -241,6 +242,7 @@ jobs:
       site_id: ${{ needs.provision.outputs.site_id_dev }}
       sso: ${{ needs.parse-config.outputs.has_sso }}
       custom_domain: ${{ needs.parse-config.outputs.custom_domain }}
+      frontend_spa: ${{ needs.parse-config.outputs.frontend_spa }}
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 3. Deploy backend (if changed)
@@ -298,6 +300,7 @@ jobs:
       site_id: ${{ needs.provision.outputs.site_id_prod }}
       sso: ${{ needs.parse-config.outputs.has_sso }}
       custom_domain: ${{ needs.parse-config.outputs.custom_domain }}
+      frontend_spa: ${{ needs.parse-config.outputs.frontend_spa }}
 
   deploy-backend-prod:
     name: Backend → prod

@@ -10,9 +10,10 @@ name: my-app
 domain: my-app.io   # optional — explicit custom domain
 
 frontend:
-  framework: react
+  framework: react   # react | vue | next | static | none
   dir: frontend
   node_version: "20"
+  spa: false          # optional — SPA catch-all routing for static framework (default: false)
   sso: true          # optional — serve via Cloud Run + IAP (see SSO section)
 
 backend:
@@ -76,9 +77,9 @@ Omit this block or set `framework: none` if your app has no frontend.
 
 The frontend framework. Determines build commands and hosting configuration.
 
-- `react` / `vue` — standard SPA, built with `npm run build`
+- `react` / `vue` — standard SPA, built with `npm run build`, SPA catch-all routing enabled by default
 - `next` — Next.js app with SSR support
-- `static` — plain HTML/CSS/JS, no build step
+- `static` — plain HTML/CSS/JS, no build step (`npm install` / `npm run build` are skipped entirely, the contents of `dir` are deployed directly)
 - `none` — no frontend
 
 #### `frontend.dir`
@@ -98,6 +99,25 @@ Directory containing your frontend source code, relative to repo root.
 | Default | `20` |
 
 Node.js version for building the frontend. Can also be set via `.nvmrc` in the frontend directory.
+
+#### `frontend.spa`
+
+| | |
+|---|---|
+| Type | `boolean` |
+| Default | `false` |
+
+When `true` with `framework: static`, adds SPA catch-all routing so all paths serve `index.html`. This is useful for static single-page applications that handle routing client-side.
+
+For `react` and `vue` frameworks, SPA routing is always enabled regardless of this setting.
+
+**Example:**
+```yaml
+frontend:
+  framework: static
+  dir: frontend
+  spa: true
+```
 
 #### `frontend.sso`
 

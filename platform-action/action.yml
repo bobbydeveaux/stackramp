@@ -50,6 +50,9 @@ outputs:
   has_sso:
     description: "Whether SSO (IAP) is enabled for this app"
     value: ${{ steps.parse.outputs.has_sso }}
+  frontend_spa:
+    description: "Whether SPA catch-all routing is enabled (for static frontends)"
+    value: ${{ steps.parse.outputs.frontend_spa }}
 
 runs:
   using: "composite"
@@ -124,6 +127,9 @@ runs:
         HAS_SSO="false"
         { [ "$FRONTEND_SSO" = "true" ] || [ "$BACKEND_SSO" = "true" ]; } && HAS_SSO="true"
 
+        FRONTEND_SPA=$(yq '.frontend.spa // false' "$CONFIG")
+        [ "$FRONTEND_SPA" != "true" ] && FRONTEND_SPA="false"
+
         echo "app_name=$APP_NAME" >> $GITHUB_OUTPUT
         echo "has_frontend=$HAS_FRONTEND" >> $GITHUB_OUTPUT
         echo "frontend_framework=$FRONTEND_FRAMEWORK" >> $GITHUB_OUTPUT
@@ -138,6 +144,7 @@ runs:
         echo "storage_type=$STORAGE_TYPE" >> $GITHUB_OUTPUT
         echo "custom_domain=$CUSTOM_DOMAIN" >> $GITHUB_OUTPUT
         echo "has_sso=$HAS_SSO" >> $GITHUB_OUTPUT
+        echo "frontend_spa=$FRONTEND_SPA" >> $GITHUB_OUTPUT
 
         echo "App: $APP_NAME"
         echo "Frontend: $FRONTEND_FRAMEWORK ($FRONTEND_DIR)"
