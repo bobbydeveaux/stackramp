@@ -33,7 +33,7 @@ jobs:
   cleanup-preview:
     name: Cleanup PR preview
     if: github.event_name == 'pull_request' && github.event.action == 'closed'
-    uses: bobbydeveaux/stackramp/.github/workflows/_cleanup-preview.yml@feat/native-cloud-run-iap
+    uses: bobbydeveaux/stackramp/.github/workflows/_cleanup-preview.yml@main
     secrets: inherit
 
   # ─────────────────────────────────────────────────────────────────────────────
@@ -69,7 +69,7 @@ jobs:
 
       - name: Parse config
         id: config
-        uses: bobbydeveaux/stackramp/platform-action@feat/native-cloud-run-iap
+        uses: bobbydeveaux/stackramp/platform-action@main
         with:
           config_path: ${{ inputs.config_path }}
 
@@ -108,11 +108,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: bobbydeveaux/stackramp
-          ref: feat/native-cloud-run-iap
+          ref: main
           path: .stackramp
 
       - name: Authenticate to Google Cloud
-        uses: bobbydeveaux/stackramp/providers/gcp/workflows/auth@feat/native-cloud-run-iap
+        uses: bobbydeveaux/stackramp/providers/gcp/workflows/auth@main
         with:
           wif_provider: ${{ vars.STACKRAMP_WIF_PROVIDER }}
           service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
@@ -224,7 +224,7 @@ jobs:
       (needs.deploy-backend.result == 'success' || needs.deploy-backend.result == 'skipped') &&
       needs.parse-config.outputs.has_frontend == 'true' &&
       (needs.parse-config.outputs.frontend_changed == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request')
-    uses: bobbydeveaux/stackramp/.github/workflows/_frontend.yml@feat/native-cloud-run-iap
+    uses: bobbydeveaux/stackramp/.github/workflows/_frontend.yml@main
     secrets: inherit
     with:
       app_name: ${{ needs.parse-config.outputs.app_name }}
@@ -252,7 +252,7 @@ jobs:
       needs.provision.result == 'success' &&
       needs.parse-config.outputs.has_backend == 'true' &&
       (needs.parse-config.outputs.backend_changed == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request')
-    uses: bobbydeveaux/stackramp/.github/workflows/_backend.yml@feat/native-cloud-run-iap
+    uses: bobbydeveaux/stackramp/.github/workflows/_backend.yml@main
     secrets: inherit
     with:
       app_name: ${{ needs.parse-config.outputs.app_name }}
@@ -284,7 +284,7 @@ jobs:
       needs.provision.result == 'success' &&
       needs.parse-config.outputs.has_frontend == 'true' &&
       (needs.deploy-frontend.result == 'success' || needs.deploy-frontend.result == 'skipped')
-    uses: bobbydeveaux/stackramp/.github/workflows/_frontend.yml@feat/native-cloud-run-iap
+    uses: bobbydeveaux/stackramp/.github/workflows/_frontend.yml@main
     secrets: inherit
     with:
       app_name: ${{ needs.parse-config.outputs.app_name }}
@@ -312,7 +312,7 @@ jobs:
       needs.provision.result == 'success' &&
       needs.parse-config.outputs.has_backend == 'true' &&
       (needs.deploy-backend.result == 'success' || needs.deploy-backend.result == 'skipped')
-    uses: bobbydeveaux/stackramp/.github/workflows/_backend.yml@feat/native-cloud-run-iap
+    uses: bobbydeveaux/stackramp/.github/workflows/_backend.yml@main
     secrets: inherit
     with:
       app_name: ${{ needs.parse-config.outputs.app_name }}

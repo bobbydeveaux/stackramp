@@ -101,7 +101,7 @@ jobs:
           path: .stackramp
 
       - name: Authenticate to Google Cloud
-        uses: bobbydeveaux/stackramp/providers/gcp/workflows/auth@feat/native-cloud-run-iap
+        uses: bobbydeveaux/stackramp/providers/gcp/workflows/auth@main
         with:
           wif_provider: ${{ inputs.wif_provider }}
           service_account: ${{ inputs.service_account }}
