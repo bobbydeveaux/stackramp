@@ -32,6 +32,9 @@ outputs:
   backend_port:
     description: "Backend port"
     value: ${{ steps.parse.outputs.backend_port }}
+  min_instances:
+    description: "Minimum Cloud Run instances (default 0)"
+    value: ${{ steps.parse.outputs.min_instances }}
   has_database:
     description: "Whether the app uses a database"
     value: ${{ steps.parse.outputs.has_database }}
@@ -83,6 +86,7 @@ runs:
         BACKEND_LANG=$(yq '.backend.language // "none"' "$CONFIG")
         BACKEND_DIR=$(yq '.backend.dir // "backend"' "$CONFIG")
         BACKEND_PORT=$(yq '.backend.port // 8080' "$CONFIG")
+        MIN_INSTANCES=$(yq '.backend.min_instances // 0' "$CONFIG")
         DATABASE=$(yq '.database // false' "$CONFIG")
         PROVIDER="${STACKRAMP_PROVIDER:-$(yq '.provider.cloud // "gcp"' "$CONFIG")}"
 
@@ -132,6 +136,7 @@ runs:
         echo "backend_language=$BACKEND_LANG" >> $GITHUB_OUTPUT
         echo "backend_dir=$BACKEND_DIR" >> $GITHUB_OUTPUT
         echo "backend_port=$BACKEND_PORT" >> $GITHUB_OUTPUT
+        echo "min_instances=$MIN_INSTANCES" >> $GITHUB_OUTPUT
         echo "has_database=$HAS_DATABASE" >> $GITHUB_OUTPUT
         echo "provider=$PROVIDER" >> $GITHUB_OUTPUT
         echo "has_storage=$HAS_STORAGE" >> $GITHUB_OUTPUT

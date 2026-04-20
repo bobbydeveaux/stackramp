@@ -61,6 +61,7 @@ jobs:
       has_storage: ${{ steps.config.outputs.has_storage }}
       storage_type: ${{ steps.config.outputs.storage_type }}
       has_sso: ${{ steps.config.outputs.has_sso }}
+      min_instances: ${{ steps.config.outputs.min_instances }}
 
     steps:
       - uses: actions/checkout@v4
@@ -269,6 +270,7 @@ jobs:
       cloudsql_connection_name: ${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }}
       vpc_connector: ${{ vars.STACKRAMP_VPC_CONNECTOR || 'stackramp-vpc-dev' }}
       database_secret_name: ${{ needs.provision.outputs.database_secret_name_dev }}
+      min_instances: ${{ needs.parse-config.outputs.min_instances }}
       sso: ${{ needs.parse-config.outputs.has_sso }}
 
   # ─────────────────────────────────────────────────────────────────────────────
@@ -329,4 +331,5 @@ jobs:
       cloudsql_connection_name: ${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }}
       vpc_connector: ${{ vars.STACKRAMP_VPC_CONNECTOR || 'stackramp-vpc-dev' }}
       database_secret_name: ${{ needs.provision.outputs.database_secret_name_prod }}
+      min_instances: ${{ needs.parse-config.outputs.min_instances }}
       sso: ${{ needs.parse-config.outputs.has_sso }}

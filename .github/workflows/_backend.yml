@@ -70,11 +70,16 @@ on:
         required: false
         default: ""
         description: "Secret Manager secret ID holding DATABASE_URL for this app. Mounted directly into Cloud Run."
+      min_instances:
+        type: string
+        required: false
+        default: "0"
+        description: "Minimum number of Cloud Run instances to keep warm. Default 0 (scale to zero)."
       sso:
         type: string
         required: false
         default: "false"
-        description: "When true, Cloud Run is deployed without --allow-unauthenticated (IAP LB is the entry point)."
+        description: "When true, Cloud Run is deployed without --allow-unauthenticated (IAP handles auth)."
     outputs:
       url:
         description: "Deployed backend URL"
@@ -186,7 +191,7 @@ jobs:
             --set-env-vars="${ENV_VARS}"
             --memory="${{ inputs.memory }}"
             --cpu="${{ inputs.cpu }}"
-            --min-instances=1
+            --min-instances=${{ inputs.min_instances }}
             --max-instances=10
             --timeout=300
             --cpu-throttling
