@@ -192,9 +192,9 @@ jobs:
             --cpu-throttling
             --project="${{ inputs.platform_project }}"
           )
-          # SSO: restrict ingress to LB only — IAP handles authn at the LB, no IAP SA grant needed
+          # SSO: IAP handles auth directly on Cloud Run — don't grant allUsers invoker
           if [ "${{ inputs.sso }}" = "true" ]; then
-            DEPLOY_FLAGS+=(--allow-unauthenticated --ingress=internal-and-cloud-load-balancing)
+            DEPLOY_FLAGS+=(--no-allow-unauthenticated --ingress=all)
           else
             DEPLOY_FLAGS+=(--allow-unauthenticated --ingress=all)
           fi
