@@ -86,9 +86,6 @@ locals {
   is_subdomain         = local.dns_enabled && length(split(".", var.custom_domain)) > 2
   firebase_a_records   = ["199.36.158.100", "199.36.158.101"]
 
-  # SSO DNS (points to LB static IP)
-  sso_dns_enabled = var.has_sso && var.custom_domain != "" && var.dns_zone_name != ""
-
   # IAP member — domain:example.com or allAuthenticatedUsers
   iap_member = (var.iap_allowed_domain == "" || var.iap_allowed_domain == "*") ? "allAuthenticatedUsers" : "domain:${var.iap_allowed_domain}"
 }
@@ -125,6 +122,7 @@ resource "google_cloud_run_v2_service" "app" {
   location            = var.region
   project             = var.platform_project
   deletion_protection = false
+  iap_enabled         = var.has_sso
 
   template {
     containers {
@@ -159,10 +157,9 @@ resource "google_cloud_run_v2_service_iam_member" "public" {
   member   = "allUsers"
 }
 
-# ── SSO: IAP + HTTPS Load Balancer ───────────────────────────────────────────
+# ── SSO: IAP directly on Cloud Run (no load balancer) ────────────────────────
 # When sso: true — frontend served from Cloud Run (not Firebase Hosting),
-# both services sit behind a single LB with IAP. The IAP OAuth client was
-# created once at bootstrap and its credentials are stored in Secret Manager.
+# IAP is enabled directly on each Cloud Run service. No LB required.
 
 # Frontend Cloud Run service (serves nginx + built static files)
 resource "google_cloud_run_v2_service" "frontend_sso" {
@@ -171,6 +168,7 @@ resource "google_cloud_run_v2_service" "frontend_sso" {
   location            = var.region
   project             = var.platform_project
   deletion_protection = false
+  iap_enabled         = true
 
   template {
     containers {
@@ -179,13 +177,10 @@ resource "google_cloud_run_v2_service" "frontend_sso" {
         container_port = 8080
       }
     }
-    # Only accept traffic from the HTTPS Load Balancer — IAP enforces authn there
     scaling {
       min_instance_count = 0
     }
   }
-
-  ingress = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
 
   lifecycle {
     ignore_changes = [
@@ -194,7 +189,7 @@ resource "google_cloud_run_v2_service" "frontend_sso" {
   }
 }
 
-# IAP SA invoker on backend — IAP requires run.invoker even when Cloud Run allows allUsers
+# IAP SA invoker — IAP service agent needs run.invoker to forward authed requests
 resource "google_cloud_run_v2_service_iam_member" "iap_backend_invoker" {
   count    = var.has_sso && var.has_backend ? 1 : 0
   project  = var.platform_project
@@ -213,199 +208,23 @@ resource "google_cloud_run_v2_service_iam_member" "iap_frontend_invoker_sa" {
   member   = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-iap.iam.gserviceaccount.com"
 }
 
-# Read IAP credentials from Secret Manager (created at bootstrap)
-data "google_secret_manager_secret_version" "iap_client_id" {
-  count   = var.has_sso ? 1 : 0
-  secret  = "stackramp-iap-client-id"
-  project = var.platform_project
+# IAP access grants — who is allowed through IAP
+resource "google_iap_web_cloud_run_service_iam_member" "frontend_access" {
+  count                  = var.has_sso ? 1 : 0
+  project                = data.google_project.project.number
+  location               = var.region
+  cloud_run_service_name = google_cloud_run_v2_service.frontend_sso[0].name
+  role                   = "roles/iap.httpsResourceAccessor"
+  member                 = local.iap_member
 }
 
-data "google_secret_manager_secret_version" "iap_client_secret" {
-  count   = var.has_sso ? 1 : 0
-  secret  = "stackramp-iap-client-secret"
-  project = var.platform_project
-}
-
-# Static IP for the LB
-resource "google_compute_global_address" "app" {
-  count   = var.has_sso ? 1 : 0
-  name    = "${var.app_name}-${var.environment}-ip"
-  project = var.platform_project
-}
-
-# Managed SSL cert (provisioned automatically once DNS A record resolves)
-resource "google_compute_managed_ssl_certificate" "app" {
-  count   = var.has_sso && var.custom_domain != "" ? 1 : 0
-  name    = "${var.app_name}-${var.environment}-cert"
-  project = var.platform_project
-
-  managed {
-    domains = [var.custom_domain]
-  }
-}
-
-# Serverless NEGs
-resource "google_compute_region_network_endpoint_group" "frontend_neg" {
-  count                 = var.has_sso ? 1 : 0
-  name                  = "${var.app_name}-fe-${var.environment}-neg"
-  network_endpoint_type = "SERVERLESS"
-  region                = var.region
-  project               = var.platform_project
-
-  cloud_run {
-    service = google_cloud_run_v2_service.frontend_sso[0].name
-  }
-}
-
-resource "google_compute_region_network_endpoint_group" "backend_neg" {
-  count                 = var.has_sso && var.has_backend ? 1 : 0
-  name                  = "${var.app_name}-be-${var.environment}-neg"
-  network_endpoint_type = "SERVERLESS"
-  region                = var.region
-  project               = var.platform_project
-
-  cloud_run {
-    service = google_cloud_run_v2_service.app[0].name
-  }
-}
-
-# Backend services with IAP enabled
-resource "google_compute_backend_service" "frontend_bs" {
-  count                 = var.has_sso ? 1 : 0
-  name                  = "${var.app_name}-fe-${var.environment}-bs"
-  project               = var.platform_project
-  protocol              = "HTTPS"
-  load_balancing_scheme = "EXTERNAL_MANAGED"
-
-  backend {
-    group = google_compute_region_network_endpoint_group.frontend_neg[0].id
-  }
-
-  iap {
-    enabled              = true
-    oauth2_client_id     = data.google_secret_manager_secret_version.iap_client_id[0].secret_data
-    oauth2_client_secret = data.google_secret_manager_secret_version.iap_client_secret[0].secret_data
-  }
-}
-
-resource "google_compute_backend_service" "backend_bs" {
-  count                 = var.has_sso && var.has_backend ? 1 : 0
-  name                  = "${var.app_name}-be-${var.environment}-bs"
-  project               = var.platform_project
-  protocol              = "HTTPS"
-  load_balancing_scheme = "EXTERNAL_MANAGED"
-
-  backend {
-    group = google_compute_region_network_endpoint_group.backend_neg[0].id
-  }
-
-  iap {
-    enabled              = true
-    oauth2_client_id     = data.google_secret_manager_secret_version.iap_client_id[0].secret_data
-    oauth2_client_secret = data.google_secret_manager_secret_version.iap_client_secret[0].secret_data
-  }
-}
-
-# URL map: /api/* → backend, everything else → frontend
-resource "google_compute_url_map" "app" {
-  count           = var.has_sso ? 1 : 0
-  name            = "${var.app_name}-${var.environment}-urlmap"
-  project         = var.platform_project
-  default_service = google_compute_backend_service.frontend_bs[0].id
-
-  host_rule {
-    hosts        = var.custom_domain != "" ? [var.custom_domain] : ["*"]
-    path_matcher = "paths"
-  }
-
-  path_matcher {
-    name            = "paths"
-    default_service = google_compute_backend_service.frontend_bs[0].id
-
-    dynamic "path_rule" {
-      for_each = var.has_backend ? [1] : []
-      content {
-        paths   = ["/api", "/api/*"]
-        service = google_compute_backend_service.backend_bs[0].id
-      }
-    }
-  }
-}
-
-# HTTP → HTTPS redirect
-resource "google_compute_url_map" "redirect" {
-  count   = var.has_sso ? 1 : 0
-  name    = "${var.app_name}-${var.environment}-redirect"
-  project = var.platform_project
-
-  default_url_redirect {
-    https_redirect = true
-    strip_query    = false
-  }
-}
-
-resource "google_compute_target_http_proxy" "redirect" {
-  count   = var.has_sso ? 1 : 0
-  name    = "${var.app_name}-${var.environment}-http-proxy"
-  project = var.platform_project
-  url_map = google_compute_url_map.redirect[0].id
-}
-
-resource "google_compute_global_forwarding_rule" "http_redirect" {
-  count                 = var.has_sso ? 1 : 0
-  name                  = "${var.app_name}-${var.environment}-http"
-  project               = var.platform_project
-  ip_address            = google_compute_global_address.app[0].address
-  port_range            = "80"
-  target                = google_compute_target_http_proxy.redirect[0].id
-  load_balancing_scheme = "EXTERNAL_MANAGED"
-}
-
-# HTTPS proxy + forwarding rule
-resource "google_compute_target_https_proxy" "app" {
-  count            = var.has_sso && var.custom_domain != "" ? 1 : 0
-  name             = "${var.app_name}-${var.environment}-https-proxy"
-  project          = var.platform_project
-  url_map          = google_compute_url_map.app[0].id
-  ssl_certificates = [google_compute_managed_ssl_certificate.app[0].id]
-}
-
-resource "google_compute_global_forwarding_rule" "https" {
-  count                 = var.has_sso && var.custom_domain != "" ? 1 : 0
-  name                  = "${var.app_name}-${var.environment}-https"
-  project               = var.platform_project
-  ip_address            = google_compute_global_address.app[0].address
-  port_range            = "443"
-  target                = google_compute_target_https_proxy.app[0].id
-  load_balancing_scheme = "EXTERNAL_MANAGED"
-}
-
-# DNS A record pointing to LB IP (SSO replaces Firebase DNS records)
-resource "google_dns_record_set" "sso_a" {
-  count        = local.sso_dns_enabled ? 1 : 0
-  name         = "${var.custom_domain}."
-  type         = "A"
-  ttl          = 300
-  managed_zone = var.dns_zone_name
-  project      = var.platform_project
-  rrdatas      = [google_compute_global_address.app[0].address]
-}
-
-# IAP access grants — who is allowed through the proxy
-resource "google_iap_web_backend_service_iam_member" "frontend_access" {
-  count               = var.has_sso ? 1 : 0
-  project             = var.platform_project
-  web_backend_service = google_compute_backend_service.frontend_bs[0].name
-  role                = "roles/iap.httpsResourceAccessor"
-  member              = local.iap_member
-}
-
-resource "google_iap_web_backend_service_iam_member" "backend_access" {
-  count               = var.has_sso && var.has_backend ? 1 : 0
-  project             = var.platform_project
-  web_backend_service = google_compute_backend_service.backend_bs[0].name
-  role                = "roles/iap.httpsResourceAccessor"
-  member              = local.iap_member
+resource "google_iap_web_cloud_run_service_iam_member" "backend_access" {
+  count                  = var.has_sso && var.has_backend ? 1 : 0
+  project                = data.google_project.project.number
+  location               = var.region
+  cloud_run_service_name = google_cloud_run_v2_service.app[0].name
+  role                   = "roles/iap.httpsResourceAccessor"
+  member                 = local.iap_member
 }
 
 # ── GCS Data Bucket (optional) ────────────────────────────────────────────────
@@ -473,8 +292,8 @@ resource "google_secret_manager_secret" "database_url" {
 }
 
 resource "google_secret_manager_secret_version" "database_url" {
-  count   = var.has_database ? 1 : 0
-  secret  = google_secret_manager_secret.database_url[0].id
+  count  = var.has_database ? 1 : 0
+  secret = google_secret_manager_secret.database_url[0].id
   secret_data = join("", [
     "postgresql://",
     google_sql_user.app[0].name,

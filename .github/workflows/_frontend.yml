@@ -168,7 +168,7 @@ jobs:
             --platform=managed
             --port=$FRONTEND_PORT
             --allow-unauthenticated
-            --ingress=internal-and-cloud-load-balancing
+            --ingress=all
             --project="${{ inputs.platform_project }}"
           )
           [ -n "$SECRET_REFS" ] && DEPLOY_FLAGS+=(--set-secrets="$SECRET_REFS")

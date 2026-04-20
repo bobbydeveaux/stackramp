@@ -192,12 +192,8 @@ jobs:
             --cpu-throttling
             --project="${{ inputs.platform_project }}"
           )
-          # SSO: restrict ingress to LB only — IAP handles authn at the LB, no IAP SA grant needed
-          if [ "${{ inputs.sso }}" = "true" ]; then
-            DEPLOY_FLAGS+=(--allow-unauthenticated --ingress=internal-and-cloud-load-balancing)
-          else
-            DEPLOY_FLAGS+=(--allow-unauthenticated --ingress=all)
-          fi
+          # IAP is enabled directly on Cloud Run — no LB needed, ingress=all is fine
+          DEPLOY_FLAGS+=(--allow-unauthenticated --ingress=all)
           [ -n "$SECRET_REFS" ] && DEPLOY_FLAGS+=(--set-secrets="$SECRET_REFS")
           [ -n "${{ inputs.vpc_connector }}" ] && DEPLOY_FLAGS+=(--vpc-connector="${{ inputs.vpc_connector }}" --vpc-egress=private-ranges-only)
           [ -n "${{ inputs.cloudsql_connection_name }}" ] && DEPLOY_FLAGS+=(--add-cloudsql-instances="${{ inputs.cloudsql_connection_name }}")

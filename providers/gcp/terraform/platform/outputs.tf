@@ -6,8 +6,8 @@ output "site_id" {
 output "frontend_url" {
   description = "Frontend URL"
   value = var.has_sso ? (
-    var.custom_domain != "" ? "https://${var.custom_domain}" : "https://${google_cloud_run_v2_service.frontend_sso[0].uri}"
-  ) : (
+    var.custom_domain != "" ? "https://${var.custom_domain}" : google_cloud_run_v2_service.frontend_sso[0].uri
+    ) : (
     var.custom_domain != "" ? "https://${var.custom_domain}" : "https://${google_firebase_hosting_site.app[0].site_id}.web.app"
   )
 }
@@ -15,11 +15,6 @@ output "frontend_url" {
 output "backend_url" {
   description = "Backend Cloud Run URI"
   value       = var.has_backend ? google_cloud_run_v2_service.app[0].uri : ""
-}
-
-output "lb_ip" {
-  description = "Load balancer static IP (only when sso=true)"
-  value       = var.has_sso ? google_compute_global_address.app[0].address : ""
 }
 
 output "storage_bucket" {

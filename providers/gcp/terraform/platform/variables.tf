@@ -62,7 +62,7 @@ variable "cloudsql_connection_name" {
 }
 
 variable "has_sso" {
-  description = "Whether to enable IAP SSO for this app. Frontend is served from Cloud Run (not Firebase Hosting) and both services sit behind a GCP HTTPS Load Balancer with IAP."
+  description = "Whether to enable IAP SSO for this app. Frontend is served from Cloud Run (not Firebase Hosting) with IAP enabled directly on the Cloud Run services."
   type        = bool
   default     = false
 }
