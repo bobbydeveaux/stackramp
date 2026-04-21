@@ -170,7 +170,7 @@ jobs:
           echo "database_secret_name=$(terraform output -raw database_secret_name 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
 
       - name: Terraform init (prod)
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         working-directory: .stackramp/providers/gcp/terraform/platform
         run: |
           terraform init -reconfigure \
@@ -178,7 +178,7 @@ jobs:
             -backend-config="prefix=${{ needs.parse-config.outputs.app_name }}-prod"
 
       - name: Terraform apply (prod — main branch only)
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         working-directory: .stackramp/providers/gcp/terraform/platform
         run: |
           CUSTOM_DOMAIN="${{ needs.parse-config.outputs.custom_domain }}"
@@ -204,7 +204,7 @@ jobs:
 
       - name: Capture prod outputs
         id: tf-out-prod
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         working-directory: .stackramp/providers/gcp/terraform/platform
         run: |
           echo "backend_url=$(terraform output -raw backend_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
