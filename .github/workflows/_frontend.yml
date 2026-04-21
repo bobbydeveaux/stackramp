@@ -56,6 +56,11 @@ on:
         required: false
         default: ""
         description: "Custom domain for the app — used as the output URL when sso=true."
+      vpc_connector:
+        type: string
+        required: false
+        default: ""
+        description: "VPC connector name — when set, frontend routes all traffic through VPC for internal backend access."
     outputs:
       url:
         description: "Deployed frontend URL"
@@ -173,6 +178,7 @@ jobs:
             --project="${{ inputs.platform_project }}"
           )
           [ -n "$SECRET_REFS" ] && DEPLOY_FLAGS+=(--set-secrets="$SECRET_REFS")
+          [ -n "${{ inputs.vpc_connector }}" ] && DEPLOY_FLAGS+=(--vpc-connector="${{ inputs.vpc_connector }}" --vpc-egress=all-traffic)
 
           gcloud run deploy "${{ inputs.app_name }}-fe-${{ inputs.environment }}" "${DEPLOY_FLAGS[@]}"
 

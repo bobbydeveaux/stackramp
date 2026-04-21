@@ -242,6 +242,7 @@ jobs:
       site_id: ${{ needs.provision.outputs.site_id_dev }}
       sso: ${{ needs.parse-config.outputs.has_sso }}
       custom_domain: ${{ needs.parse-config.outputs.custom_domain }}
+      vpc_connector: ${{ vars.STACKRAMP_VPC_CONNECTOR || '' }}
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 3. Deploy backend (if changed)
@@ -303,6 +304,7 @@ jobs:
       site_id: ${{ needs.provision.outputs.site_id_prod }}
       sso: ${{ needs.parse-config.outputs.has_sso }}
       custom_domain: ${{ needs.parse-config.outputs.custom_domain }}
+      vpc_connector: ${{ vars.STACKRAMP_VPC_CONNECTOR || '' }}
 
   deploy-backend-prod:
     name: Backend → prod

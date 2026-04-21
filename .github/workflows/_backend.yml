@@ -197,9 +197,13 @@ jobs:
             --cpu-throttling
             --project="${{ inputs.platform_project }}"
           )
-          # Frontend IAP is the auth boundary — backend is always allow-unauthenticated
-          # (SSO backends are only reachable via the frontend nginx proxy)
-          DEPLOY_FLAGS+=(--allow-unauthenticated --ingress=all)
+          # Frontend IAP is the auth boundary — backend is allow-unauthenticated
+          # When VPC connector exists + SSO, restrict backend to internal traffic only
+          if [ "${{ inputs.sso }}" = "true" ] && [ -n "${{ inputs.vpc_connector }}" ]; then
+            DEPLOY_FLAGS+=(--no-allow-unauthenticated --ingress=internal)
+          else
+            DEPLOY_FLAGS+=(--allow-unauthenticated --ingress=all)
+          fi
           [ -n "$SECRET_REFS" ] && DEPLOY_FLAGS+=(--set-secrets="$SECRET_REFS")
           [ -n "${{ inputs.vpc_connector }}" ] && DEPLOY_FLAGS+=(--vpc-connector="${{ inputs.vpc_connector }}" --vpc-egress=private-ranges-only)
           [ -n "${{ inputs.cloudsql_connection_name }}" ] && DEPLOY_FLAGS+=(--add-cloudsql-instances="${{ inputs.cloudsql_connection_name }}")
