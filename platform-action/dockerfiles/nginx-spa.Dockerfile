@@ -15,7 +15,7 @@ RUN { \
     echo '  index index.html;'; \
     echo '  location / { try_files $uri $uri/ /index.html; }'; \
     if [ -n "$BACKEND_URL" ]; then \
-      echo "  location /api/ { proxy_pass ${BACKEND_URL}/api/; proxy_set_header Host \$host; proxy_set_header X-Real-IP \$remote_addr; proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto \$scheme; }"; \
+      echo "  location /api/ { proxy_pass ${BACKEND_URL}/api/; proxy_ssl_server_name on; proxy_set_header X-Real-IP \$remote_addr; proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto \$scheme; }"; \
     fi; \
     echo '}'; \
     } > /etc/nginx/conf.d/default.conf
