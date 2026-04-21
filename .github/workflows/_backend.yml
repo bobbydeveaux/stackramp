@@ -197,12 +197,9 @@ jobs:
             --cpu-throttling
             --project="${{ inputs.platform_project }}"
           )
-          # SSO: IAP handles auth directly on Cloud Run — don't grant allUsers invoker
-          if [ "${{ inputs.sso }}" = "true" ]; then
-            DEPLOY_FLAGS+=(--no-allow-unauthenticated --ingress=all)
-          else
-            DEPLOY_FLAGS+=(--allow-unauthenticated --ingress=all)
-          fi
+          # Frontend IAP is the auth boundary — backend is always allow-unauthenticated
+          # (SSO backends are only reachable via the frontend nginx proxy)
+          DEPLOY_FLAGS+=(--allow-unauthenticated --ingress=all)
           [ -n "$SECRET_REFS" ] && DEPLOY_FLAGS+=(--set-secrets="$SECRET_REFS")
           [ -n "${{ inputs.vpc_connector }}" ] && DEPLOY_FLAGS+=(--vpc-connector="${{ inputs.vpc_connector }}" --vpc-egress=private-ranges-only)
           [ -n "${{ inputs.cloudsql_connection_name }}" ] && DEPLOY_FLAGS+=(--add-cloudsql-instances="${{ inputs.cloudsql_connection_name }}")
