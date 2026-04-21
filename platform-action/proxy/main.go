@@ -3,6 +3,8 @@
 package main
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -43,12 +45,8 @@ func main() {
 				if err != nil {
 					log.Printf("WARNING: failed to fetch identity token: %v", err)
 				} else if token != "" {
-					// Verify token looks like a JWT (base64url-encoded JSON header)
-					if strings.HasPrefix(token, "eyJ") {
-						log.Printf("Identity token OK for %s (len=%d)", target.Host, len(token))
-					} else {
-						log.Printf("WARNING: token does not look like a JWT, first 50 chars: %.50s", token)
-					}
+					// Decode JWT claims for debugging
+					logJWTClaims(token)
 					req.Header.Set("Authorization", "Bearer "+token)
 				} else {
 					log.Printf("WARNING: empty identity token returned")
@@ -61,7 +59,6 @@ func main() {
 						body, _ := io.ReadAll(resp.Body)
 						resp.Body.Close()
 						log.Printf("Backend %d body: %.500s", resp.StatusCode, string(body))
-						// Re-create body for the client
 						resp.Body = io.NopCloser(strings.NewReader(string(body)))
 						resp.ContentLength = int64(len(body))
 					}
@@ -89,12 +86,35 @@ func main() {
 	log.Fatal(http.ListenAndServe(":"+port, mux))
 }
 
+// logJWTClaims decodes and logs key claims from a JWT token (for debugging).
+func logJWTClaims(token string) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		log.Printf("WARNING: token is not a valid JWT (parts=%d)", len(parts))
+		return
+	}
+	// Decode the payload (second part)
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		log.Printf("WARNING: failed to decode JWT payload: %v", err)
+		return
+	}
+	var claims map[string]interface{}
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		log.Printf("WARNING: failed to parse JWT claims: %v", err)
+		return
+	}
+	log.Printf("JWT claims: iss=%v aud=%v email=%v sub=%v", claims["iss"], claims["aud"], claims["email"], claims["sub"])
+}
+
 // fetchIdentityToken gets an identity token from the GCE metadata server.
 // Only works on Cloud Run / GCE / GKE.
 func fetchIdentityToken(audience string) (string, error) {
+	// NOTE: Do NOT url.QueryEscape the audience — the metadata server expects
+	// the raw URL and will set the aud claim to exactly what is passed.
 	metaURL := fmt.Sprintf(
 		"http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=%s",
-		url.QueryEscape(audience),
+		audience,
 	)
 	req, err := http.NewRequest("GET", metaURL, nil)
 	if err != nil {
