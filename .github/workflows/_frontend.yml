@@ -145,8 +145,9 @@ jobs:
           IMAGE="${{ inputs.region }}-docker.pkg.dev/${{ inputs.platform_project }}/stackramp-images/${{ inputs.app_name }}-fe:${{ github.sha }}"
           if [ "${{ inputs.frontend_framework }}" = "next" ]; then
             DOCKERFILE=".stackramp/platform-action/dockerfiles/node-next.Dockerfile"
-          elif [ -n "${{ inputs.vpc_connector }}" ]; then
-            # Use Go proxy for VPC-based orgs (handles identity tokens for service-to-service auth)
+          elif [ "${{ inputs.has_backend }}" = "true" ]; then
+            # Go proxy for all SSO apps with backends — handles identity tokens for
+            # service-to-service auth. Works on both permissive and restrictive orgs.
             DOCKERFILE=".stackramp/platform-action/dockerfiles/go-spa-proxy.Dockerfile"
           else
             DOCKERFILE=".stackramp/platform-action/dockerfiles/nginx-spa.Dockerfile"
@@ -196,10 +197,10 @@ jobs:
           )
           [ -n "$SECRET_REFS" ] && DEPLOY_FLAGS+=(--set-secrets="$SECRET_REFS")
           [ -n "${{ inputs.frontend_sa }}" ] && DEPLOY_FLAGS+=(--service-account="${{ inputs.frontend_sa }}")
+          # Go proxy reads BACKEND_URL at runtime for /api/* proxying
+          [ -n "${{ inputs.backend_url }}" ] && DEPLOY_FLAGS+=(--set-env-vars="BACKEND_URL=${{ inputs.backend_url }}")
           if [ -n "${{ inputs.vpc_connector }}" ]; then
             DEPLOY_FLAGS+=(--vpc-connector="${{ inputs.vpc_connector }}" --vpc-egress=all-traffic)
-            # Go proxy reads BACKEND_URL at runtime
-            [ -n "${{ inputs.backend_url }}" ] && DEPLOY_FLAGS+=(--set-env-vars="BACKEND_URL=${{ inputs.backend_url }}")
           fi
 
           gcloud run deploy "${{ inputs.app_name }}-fe-${{ inputs.environment }}" "${DEPLOY_FLAGS[@]}"

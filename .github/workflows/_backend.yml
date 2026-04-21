@@ -202,18 +202,15 @@ jobs:
             --cpu-throttling
             --project="${{ inputs.platform_project }}"
           )
-          if [ "${{ inputs.sso }}" = "true" ]; then
-            if [ -n "${{ inputs.vpc_connector }}" ]; then
-              # Restrictive org: VPC handles network isolation. allow-unauthenticated
-              # avoids a read-modify-write that can race with Terraform IAM bindings
-              # (org policy silently blocks allUsers anyway).
-              DEPLOY_FLAGS+=(--allow-unauthenticated --ingress=internal)
-            else
-              # Permissive org: lock backend to authenticated callers only.
-              # Frontend SA is granted run.invoker after deploy for service-to-service auth.
-              DEPLOY_FLAGS+=(--no-allow-unauthenticated --ingress=all)
-            fi
+          if [ "${{ inputs.sso }}" = "true" ] && [ -n "${{ inputs.vpc_connector }}" ]; then
+            # Restrictive org: VPC handles network isolation. allow-unauthenticated
+            # avoids a read-modify-write that can race with Terraform IAM bindings
+            # (org policy silently blocks allUsers anyway).
+            DEPLOY_FLAGS+=(--allow-unauthenticated --ingress=internal)
           else
+            # Non-SSO: backend is public. SSO without VPC: Go proxy adds identity
+            # tokens but backend still needs allow-unauthenticated since the proxy
+            # SA may not have run.invoker yet on first deploy.
             DEPLOY_FLAGS+=(--allow-unauthenticated --ingress=all)
           fi
           [ -n "$SECRET_REFS" ] && DEPLOY_FLAGS+=(--set-secrets="$SECRET_REFS")
