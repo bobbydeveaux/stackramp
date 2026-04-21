@@ -80,7 +80,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: bobbydeveaux/stackramp
-          ref: feat/native-cloud-run-iap
+          ref: main
           path: .stackramp
 
       - name: Authenticate to Google Cloud
