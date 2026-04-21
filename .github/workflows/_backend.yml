@@ -200,7 +200,7 @@ jobs:
           # Frontend IAP is the auth boundary — backend allows unauthenticated access.
           # When VPC connector + SSO, restrict ingress to internal (only VPC traffic can reach it).
           if [ "${{ inputs.sso }}" = "true" ] && [ -n "${{ inputs.vpc_connector }}" ]; then
-            DEPLOY_FLAGS+=(--allow-unauthenticated --ingress=internal)
+            DEPLOY_FLAGS+=(--no-allow-unauthenticated --ingress=internal)
           else
             DEPLOY_FLAGS+=(--allow-unauthenticated --ingress=all)
           fi

@@ -157,6 +157,17 @@ resource "google_cloud_run_v2_service_iam_member" "public" {
   member   = "allUsers"
 }
 
+# Grant default compute SA invoker on backend — used by the Go proxy
+# to call the backend with an identity token (service-to-service auth)
+resource "google_cloud_run_v2_service_iam_member" "frontend_to_backend_invoker" {
+  count    = var.has_sso && var.has_backend ? 1 : 0
+  project  = var.platform_project
+  location = var.region
+  name     = google_cloud_run_v2_service.app[0].name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${data.google_project.project.number}-compute@developer.gserviceaccount.com"
+}
+
 # ── SSO: IAP directly on Cloud Run (no load balancer) ────────────────────────
 # When sso: true — frontend served from Cloud Run (not Firebase Hosting),
 # IAP is enabled directly on each Cloud Run service. No LB required.

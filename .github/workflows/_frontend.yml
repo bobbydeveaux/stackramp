@@ -140,14 +140,26 @@ jobs:
           IMAGE="${{ inputs.region }}-docker.pkg.dev/${{ inputs.platform_project }}/stackramp-images/${{ inputs.app_name }}-fe:${{ github.sha }}"
           if [ "${{ inputs.frontend_framework }}" = "next" ]; then
             DOCKERFILE=".stackramp/platform-action/dockerfiles/node-next.Dockerfile"
+          elif [ -n "${{ inputs.vpc_connector }}" ]; then
+            # Use Go proxy for VPC-based orgs (handles identity tokens for service-to-service auth)
+            DOCKERFILE=".stackramp/platform-action/dockerfiles/go-spa-proxy.Dockerfile"
           else
             DOCKERFILE=".stackramp/platform-action/dockerfiles/nginx-spa.Dockerfile"
           fi
-          docker build \
-            -t "$IMAGE" \
-            -f "$DOCKERFILE" \
-            --build-arg BACKEND_URL="${{ inputs.backend_url }}" \
-            ${{ inputs.frontend_dir }}/
+
+          # Go proxy needs repo root as context (for .stackramp/); nginx/next use frontend dir
+          if [ "$DOCKERFILE" = ".stackramp/platform-action/dockerfiles/go-spa-proxy.Dockerfile" ]; then
+            # Copy dist into repo root so Dockerfile can access both dist/ and .stackramp/
+            cp -r ${{ inputs.frontend_dir }}/dist ./dist
+            docker build -t "$IMAGE" -f "$DOCKERFILE" .
+            rm -rf ./dist
+          else
+            docker build \
+              -t "$IMAGE" \
+              -f "$DOCKERFILE" \
+              --build-arg BACKEND_URL="${{ inputs.backend_url }}" \
+              ${{ inputs.frontend_dir }}/
+          fi
           docker push "$IMAGE"
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
 
@@ -178,7 +190,11 @@ jobs:
             --project="${{ inputs.platform_project }}"
           )
           [ -n "$SECRET_REFS" ] && DEPLOY_FLAGS+=(--set-secrets="$SECRET_REFS")
-          [ -n "${{ inputs.vpc_connector }}" ] && DEPLOY_FLAGS+=(--vpc-connector="${{ inputs.vpc_connector }}" --vpc-egress=all-traffic)
+          if [ -n "${{ inputs.vpc_connector }}" ]; then
+            DEPLOY_FLAGS+=(--vpc-connector="${{ inputs.vpc_connector }}" --vpc-egress=all-traffic)
+            # Go proxy reads BACKEND_URL at runtime
+            [ -n "${{ inputs.backend_url }}" ] && DEPLOY_FLAGS+=(--set-env-vars="BACKEND_URL=${{ inputs.backend_url }}")
+          fi
 
           gcloud run deploy "${{ inputs.app_name }}-fe-${{ inputs.environment }}" "${DEPLOY_FLAGS[@]}"
 
