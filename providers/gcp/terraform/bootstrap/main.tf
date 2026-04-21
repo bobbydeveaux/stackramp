@@ -239,6 +239,14 @@ resource "google_secret_manager_secret_iam_member" "platform_run_access" {
   member    = "serviceAccount:${data.google_project.platform.number}-compute@developer.gserviceaccount.com"
 }
 
+# Grant frontend SA access to platform secrets (restrictive orgs only)
+resource "google_secret_manager_secret_iam_member" "platform_frontend_sa_access" {
+  for_each  = var.postgres_private_ip ? toset(var.platform_secrets) : toset([])
+  secret_id = google_secret_manager_secret.platform[each.key].id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.frontend_runtime[0].email}"
+}
+
 # ── VPC Network (for Cloud SQL private IP) ───────────────────────────────────
 # Cloud SQL with private IP requires a VPC with service networking peering.
 # Cloud Run connects via a Serverless VPC Access Connector.
