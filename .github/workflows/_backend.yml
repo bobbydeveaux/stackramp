@@ -85,6 +85,11 @@ on:
         required: false
         default: ""
         description: "Frontend SA email — granted run.invoker on the backend after deploy (for SSO service-to-service auth)."
+      migrate_command:
+        type: string
+        required: false
+        default: ""
+        description: "Migration command to run via Cloud Run Job before deploy. Empty = skip migrations."
     outputs:
       url:
         description: "Deployed backend URL"
@@ -141,6 +146,55 @@ jobs:
 
       - name: Push Docker image
         run: docker push "$IMAGE"
+
+      - name: Run database migrations
+        if: inputs.migrate_command != ''
+        run: |
+          JOB_NAME="${{ inputs.app_name }}-migrate-${{ inputs.environment }}"
+
+          # Build secret refs (same discovery logic as deploy step)
+          SECRET_REFS="DATABASE_URL=${{ inputs.database_secret_name }}:latest"
+          PLATFORM_SECRETS=$(gcloud secrets list \
+            --filter="labels.platform-inject=true" \
+            --format="value(name)" \
+            --project="${{ inputs.platform_project }}")
+          for SECRET_RESOURCE in $PLATFORM_SECRETS; do
+            SECRET_NAME=$(basename "$SECRET_RESOURCE")
+            SECRET_REFS="${SECRET_REFS},${SECRET_NAME}=${SECRET_NAME}:latest"
+          done
+
+          # Job definition flags
+          JOB_FLAGS=(
+            --image="$IMAGE"
+            --region="${{ inputs.region }}"
+            --project="${{ inputs.platform_project }}"
+            --set-secrets="$SECRET_REFS"
+            --max-retries=0
+            --command="/bin/sh"
+            --args="-c,${{ inputs.migrate_command }}"
+          )
+          [ -n "${{ inputs.cloudsql_connection_name }}" ] && \
+            JOB_FLAGS+=(--add-cloudsql-instances="${{ inputs.cloudsql_connection_name }}")
+          [ -n "${{ inputs.vpc_connector }}" ] && \
+            JOB_FLAGS+=(--vpc-connector="${{ inputs.vpc_connector }}" --vpc-egress=private-ranges-only)
+
+          # Create or update job definition
+          if gcloud run jobs describe "$JOB_NAME" \
+              --region="${{ inputs.region }}" \
+              --project="${{ inputs.platform_project }}" 2>/dev/null; then
+            echo "Updating existing migration job..."
+            gcloud run jobs update "$JOB_NAME" "${JOB_FLAGS[@]}"
+          else
+            echo "Creating migration job..."
+            gcloud run jobs create "$JOB_NAME" "${JOB_FLAGS[@]}"
+          fi
+
+          # Execute and wait — blocks until complete, fails if migration fails
+          echo "Running migrations..."
+          gcloud run jobs execute "$JOB_NAME" \
+            --region="${{ inputs.region }}" \
+            --project="${{ inputs.platform_project }}" \
+            --wait
 
       - name: Deploy to Cloud Run
         run: |

@@ -53,6 +53,9 @@ outputs:
   has_sso:
     description: "Whether SSO (IAP) is enabled for this app"
     value: ${{ steps.parse.outputs.has_sso }}
+  migrate_command:
+    description: "Migration command to run before deploy (empty = no migrations)"
+    value: ${{ steps.parse.outputs.migrate_command }}
 
 runs:
   using: "composite"
@@ -128,6 +131,23 @@ runs:
         HAS_SSO="false"
         { [ "$FRONTEND_SSO" = "true" ] || [ "$BACKEND_SSO" = "true" ]; } && HAS_SSO="true"
 
+        MIGRATE=$(yq '.migrate // ""' "$CONFIG")
+        MIGRATE_COMMAND=""
+        if [ "$MIGRATE" = "true" ]; then
+          if [ "$HAS_DATABASE" != "true" ]; then
+            echo "::error::migrate: true requires database to be configured"
+            exit 1
+          fi
+          case "$BACKEND_LANG" in
+            python)  MIGRATE_COMMAND="alembic upgrade head" ;;
+            node)    MIGRATE_COMMAND="npx prisma migrate deploy" ;;
+            go)      MIGRATE_COMMAND="atlas migrate apply --url \"\$DATABASE_URL\"" ;;
+            *)       echo "::error::migrate: true but no default migration command for language '$BACKEND_LANG'. Use an explicit command string instead."; exit 1 ;;
+          esac
+        elif [ -n "$MIGRATE" ] && [ "$MIGRATE" != "null" ] && [ "$MIGRATE" != "false" ]; then
+          MIGRATE_COMMAND="$MIGRATE"
+        fi
+
         echo "app_name=$APP_NAME" >> $GITHUB_OUTPUT
         echo "has_frontend=$HAS_FRONTEND" >> $GITHUB_OUTPUT
         echo "frontend_framework=$FRONTEND_FRAMEWORK" >> $GITHUB_OUTPUT
@@ -143,6 +163,7 @@ runs:
         echo "storage_type=$STORAGE_TYPE" >> $GITHUB_OUTPUT
         echo "custom_domain=$CUSTOM_DOMAIN" >> $GITHUB_OUTPUT
         echo "has_sso=$HAS_SSO" >> $GITHUB_OUTPUT
+        echo "migrate_command=$MIGRATE_COMMAND" >> $GITHUB_OUTPUT
 
         echo "App: $APP_NAME"
         echo "Frontend: $FRONTEND_FRAMEWORK ($FRONTEND_DIR)"
@@ -150,4 +171,5 @@ runs:
         echo "Database: $DATABASE"
         echo "Storage: $STORAGE"
         echo "SSO: $HAS_SSO"
+        echo "Migrate: ${MIGRATE_COMMAND:-none}"
         echo "Provider: $PROVIDER"

@@ -62,6 +62,7 @@ jobs:
       storage_type: ${{ steps.config.outputs.storage_type }}
       has_sso: ${{ steps.config.outputs.has_sso }}
       min_instances: ${{ steps.config.outputs.min_instances }}
+      migrate_command: ${{ steps.config.outputs.migrate_command }}
 
     steps:
       - uses: actions/checkout@v4
@@ -277,6 +278,7 @@ jobs:
       min_instances: ${{ needs.parse-config.outputs.min_instances }}
       sso: ${{ needs.parse-config.outputs.has_sso }}
       frontend_sa: ${{ vars.STACKRAMP_FRONTEND_SA || '' }}
+      migrate_command: ${{ needs.parse-config.outputs.migrate_command }}
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 4. Deploy to PROD (main branch only, after dev succeeds)
@@ -341,3 +343,4 @@ jobs:
       min_instances: ${{ needs.parse-config.outputs.min_instances }}
       sso: ${{ needs.parse-config.outputs.has_sso }}
       frontend_sa: ${{ vars.STACKRAMP_FRONTEND_SA || '' }}
+      migrate_command: ${{ needs.parse-config.outputs.migrate_command }}
