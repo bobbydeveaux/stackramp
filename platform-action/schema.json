@@ -65,6 +65,29 @@
         { "type": "string", "enum": ["postgres", "mysql"] }
       ],
       "default": false
+    },
+    "security": {
+      "type": "object",
+      "description": "Guardian security scanning. Enabled by default.",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "scan_osv": { "type": "boolean", "default": true },
+        "scan_secrets": { "type": "boolean", "default": true },
+        "scan_sast": { "type": "boolean", "default": true },
+        "fail_on_findings": { "type": "boolean", "default": true }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "description": "Pulse code quality gates. Enabled by default.",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "max_ccn": { "type": "integer", "default": 15, "minimum": 1 },
+        "max_cognitive": { "type": "integer", "default": 20, "minimum": 1 },
+        "max_duplication": { "type": "number", "default": 5, "minimum": 0, "maximum": 100 },
+        "min_maintainability": { "type": "number", "default": 40, "minimum": 0, "maximum": 100 },
+        "fail_on_gate": { "type": "boolean", "default": true }
+      }
     }
   }
 }

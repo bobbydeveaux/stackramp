@@ -63,6 +63,17 @@ jobs:
       has_sso: ${{ steps.config.outputs.has_sso }}
       min_instances: ${{ steps.config.outputs.min_instances }}
       migrate_command: ${{ steps.config.outputs.migrate_command }}
+      security_enabled: ${{ steps.config.outputs.security_enabled }}
+      security_scan_osv: ${{ steps.config.outputs.security_scan_osv }}
+      security_scan_secrets: ${{ steps.config.outputs.security_scan_secrets }}
+      security_scan_sast: ${{ steps.config.outputs.security_scan_sast }}
+      security_fail_on_findings: ${{ steps.config.outputs.security_fail_on_findings }}
+      quality_enabled: ${{ steps.config.outputs.quality_enabled }}
+      quality_max_ccn: ${{ steps.config.outputs.quality_max_ccn }}
+      quality_max_cognitive: ${{ steps.config.outputs.quality_max_cognitive }}
+      quality_max_duplication: ${{ steps.config.outputs.quality_max_duplication }}
+      quality_min_maintainability: ${{ steps.config.outputs.quality_min_maintainability }}
+      quality_fail_on_gate: ${{ steps.config.outputs.quality_fail_on_gate }}
 
     steps:
       - uses: actions/checkout@v4
@@ -88,12 +99,65 @@ jobs:
               - '${{ inputs.config_path }}'
 
   # ─────────────────────────────────────────────────────────────────────────────
+  # 1.5a. Security scan (Guardian) — runs before provisioning
+  # ─────────────────────────────────────────────────────────────────────────────
+  security-scan:
+    name: Security scan
+    runs-on: ubuntu-latest
+    needs: [parse-config]
+    if: |
+      github.event.action != 'closed' &&
+      needs.parse-config.outputs.security_enabled == 'true'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Guardian Security Scan
+        uses: bobbydeveaux/guardian@main
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          scan_osv: ${{ needs.parse-config.outputs.security_scan_osv }}
+          scan_secrets: ${{ needs.parse-config.outputs.security_scan_secrets }}
+          scan_sast: ${{ needs.parse-config.outputs.security_scan_sast }}
+          fail_on_findings: ${{ needs.parse-config.outputs.security_fail_on_findings }}
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 1.5b. Quality gate (Pulse) — runs before provisioning
+  # ─────────────────────────────────────────────────────────────────────────────
+  quality-gate:
+    name: Quality gate
+    runs-on: ubuntu-latest
+    needs: [parse-config]
+    if: |
+      github.event.action != 'closed' &&
+      needs.parse-config.outputs.quality_enabled == 'true'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Pulse Quality Gate
+        uses: bobbydeveaux/pulse@main
+        with:
+          max_ccn: ${{ needs.parse-config.outputs.quality_max_ccn }}
+          max_cognitive: ${{ needs.parse-config.outputs.quality_max_cognitive }}
+          max_duplication: ${{ needs.parse-config.outputs.quality_max_duplication }}
+          min_maintainability: ${{ needs.parse-config.outputs.quality_min_maintainability }}
+          fail_on_gate: ${{ needs.parse-config.outputs.quality_fail_on_gate }}
+
+  # ─────────────────────────────────────────────────────────────────────────────
   # 2. Provision app infrastructure (idempotent)
   # ─────────────────────────────────────────────────────────────────────────────
   provision:
     name: Provision infrastructure
     runs-on: ubuntu-latest
-    needs: [parse-config]
+    needs: [parse-config, security-scan, quality-gate]
+    if: |
+      always() &&
+      needs.parse-config.result == 'success' &&
+      (needs.security-scan.result == 'success' || needs.security-scan.result == 'skipped') &&
+      (needs.quality-gate.result == 'success' || needs.quality-gate.result == 'skipped')
     outputs:
       backend_url_dev: ${{ steps.tf-out-dev.outputs.backend_url }}
       backend_url_prod: ${{ steps.tf-out-prod.outputs.backend_url }}

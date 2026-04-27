@@ -21,3 +21,19 @@ backend:
 database: false        # false | postgres | mysql (Phase 2)
 
 # storage: gcs         # false | gcs — provisions a GCS bucket + injects GCS_BUCKET env var
+
+# ── Security & Quality (both enabled by default — no config needed) ──────────
+# security:              # Guardian security scanning
+#   enabled: true        # set false to skip entirely
+#   scan_osv: true       # dependency CVE scanning
+#   scan_secrets: true   # hardcoded secrets detection
+#   scan_sast: true      # Claude AI static analysis (needs ANTHROPIC_API_KEY secret)
+#   fail_on_findings: true  # block deploy on CRITICAL issues
+
+# quality:               # Pulse code quality gates
+#   enabled: true        # set false to skip entirely
+#   max_ccn: 15          # max cyclomatic complexity per function
+#   max_cognitive: 20    # max cognitive complexity per function
+#   max_duplication: 5   # max duplication percentage
+#   min_maintainability: 40  # min maintainability index (grade C cutoff)
+#   fail_on_gate: true   # block deploy on quality gate breach

@@ -56,6 +56,39 @@ outputs:
   migrate_command:
     description: "Migration command to run before deploy (empty = no migrations)"
     value: ${{ steps.parse.outputs.migrate_command }}
+  security_enabled:
+    description: "Whether Guardian security scanning is enabled"
+    value: ${{ steps.parse.outputs.security_enabled }}
+  security_scan_osv:
+    description: "Whether OSV dependency scanning is enabled"
+    value: ${{ steps.parse.outputs.security_scan_osv }}
+  security_scan_secrets:
+    description: "Whether secrets detection is enabled"
+    value: ${{ steps.parse.outputs.security_scan_secrets }}
+  security_scan_sast:
+    description: "Whether AI SAST is enabled"
+    value: ${{ steps.parse.outputs.security_scan_sast }}
+  security_fail_on_findings:
+    description: "Whether to fail on security findings"
+    value: ${{ steps.parse.outputs.security_fail_on_findings }}
+  quality_enabled:
+    description: "Whether Pulse quality gates are enabled"
+    value: ${{ steps.parse.outputs.quality_enabled }}
+  quality_max_ccn:
+    description: "Max cyclomatic complexity per function"
+    value: ${{ steps.parse.outputs.quality_max_ccn }}
+  quality_max_cognitive:
+    description: "Max cognitive complexity per function"
+    value: ${{ steps.parse.outputs.quality_max_cognitive }}
+  quality_max_duplication:
+    description: "Max duplication percentage"
+    value: ${{ steps.parse.outputs.quality_max_duplication }}
+  quality_min_maintainability:
+    description: "Min maintainability index"
+    value: ${{ steps.parse.outputs.quality_min_maintainability }}
+  quality_fail_on_gate:
+    description: "Whether to fail on quality gate breaches"
+    value: ${{ steps.parse.outputs.quality_fail_on_gate }}
 
 runs:
   using: "composite"
@@ -148,6 +181,23 @@ runs:
           MIGRATE_COMMAND="$MIGRATE"
         fi
 
+        # Security (Guardian) — enabled by default
+        SECURITY_ENABLED=$(yq '.security.enabled // true' "$CONFIG")
+        SECURITY_SCAN_OSV=$(yq '.security.scan_osv // true' "$CONFIG")
+        SECURITY_SCAN_SECRETS=$(yq '.security.scan_secrets // true' "$CONFIG")
+        SECURITY_SCAN_SAST=$(yq '.security.scan_sast // true' "$CONFIG")
+        SECURITY_FAIL=$(yq '.security.fail_on_findings // true' "$CONFIG")
+        [ "$SECURITY_ENABLED" = "null" ] && SECURITY_ENABLED="true"
+
+        # Quality (Pulse) — enabled by default
+        QUALITY_ENABLED=$(yq '.quality.enabled // true' "$CONFIG")
+        QUALITY_MAX_CCN=$(yq '.quality.max_ccn // 15' "$CONFIG")
+        QUALITY_MAX_COG=$(yq '.quality.max_cognitive // 20' "$CONFIG")
+        QUALITY_MAX_DUP=$(yq '.quality.max_duplication // 5' "$CONFIG")
+        QUALITY_MIN_MI=$(yq '.quality.min_maintainability // 40' "$CONFIG")
+        QUALITY_FAIL=$(yq '.quality.fail_on_gate // true' "$CONFIG")
+        [ "$QUALITY_ENABLED" = "null" ] && QUALITY_ENABLED="true"
+
         echo "app_name=$APP_NAME" >> $GITHUB_OUTPUT
         echo "has_frontend=$HAS_FRONTEND" >> $GITHUB_OUTPUT
         echo "frontend_framework=$FRONTEND_FRAMEWORK" >> $GITHUB_OUTPUT
@@ -164,6 +214,17 @@ runs:
         echo "custom_domain=$CUSTOM_DOMAIN" >> $GITHUB_OUTPUT
         echo "has_sso=$HAS_SSO" >> $GITHUB_OUTPUT
         echo "migrate_command=$MIGRATE_COMMAND" >> $GITHUB_OUTPUT
+        echo "security_enabled=$SECURITY_ENABLED" >> $GITHUB_OUTPUT
+        echo "security_scan_osv=$SECURITY_SCAN_OSV" >> $GITHUB_OUTPUT
+        echo "security_scan_secrets=$SECURITY_SCAN_SECRETS" >> $GITHUB_OUTPUT
+        echo "security_scan_sast=$SECURITY_SCAN_SAST" >> $GITHUB_OUTPUT
+        echo "security_fail_on_findings=$SECURITY_FAIL" >> $GITHUB_OUTPUT
+        echo "quality_enabled=$QUALITY_ENABLED" >> $GITHUB_OUTPUT
+        echo "quality_max_ccn=$QUALITY_MAX_CCN" >> $GITHUB_OUTPUT
+        echo "quality_max_cognitive=$QUALITY_MAX_COG" >> $GITHUB_OUTPUT
+        echo "quality_max_duplication=$QUALITY_MAX_DUP" >> $GITHUB_OUTPUT
+        echo "quality_min_maintainability=$QUALITY_MIN_MI" >> $GITHUB_OUTPUT
+        echo "quality_fail_on_gate=$QUALITY_FAIL" >> $GITHUB_OUTPUT
 
         echo "App: $APP_NAME"
         echo "Frontend: $FRONTEND_FRAMEWORK ($FRONTEND_DIR)"
@@ -173,3 +234,5 @@ runs:
         echo "SSO: $HAS_SSO"
         echo "Migrate: ${MIGRATE_COMMAND:-none}"
         echo "Provider: $PROVIDER"
+        echo "Security: $SECURITY_ENABLED (osv=$SECURITY_SCAN_OSV, secrets=$SECURITY_SCAN_SECRETS, sast=$SECURITY_SCAN_SAST)"
+        echo "Quality: $QUALITY_ENABLED (ccn=$QUALITY_MAX_CCN, cognitive=$QUALITY_MAX_COG, dup=${QUALITY_MAX_DUP}%, mi=$QUALITY_MIN_MI)"
