@@ -120,6 +120,8 @@ jobs:
       - name: Setup pnpm
         if: inputs.frontend_framework != 'static' && steps.node-version.outputs.pm == 'pnpm'
         uses: pnpm/action-setup@v4
+        with:
+          version: 9
 
       - name: Setup Node.js
         if: inputs.frontend_framework != 'static'
