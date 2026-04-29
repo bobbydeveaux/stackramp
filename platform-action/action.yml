@@ -182,21 +182,20 @@ runs:
         fi
 
         # Security (Guardian) — enabled by default
-        SECURITY_ENABLED=$(yq '.security.enabled // true' "$CONFIG")
-        SECURITY_SCAN_OSV=$(yq '.security.scan_osv // true' "$CONFIG")
-        SECURITY_SCAN_SECRETS=$(yq '.security.scan_secrets // true' "$CONFIG")
-        SECURITY_SCAN_SAST=$(yq '.security.scan_sast // true' "$CONFIG")
-        SECURITY_FAIL=$(yq '.security.fail_on_findings // true' "$CONFIG")
-        [ "$SECURITY_ENABLED" = "null" ] && SECURITY_ENABLED="true"
+        # Note: yq's // operator treats false as falsy, so we use explicit null checks
+        SECURITY_ENABLED=$(yq 'if .security | has("enabled") then .security.enabled else true end' "$CONFIG")
+        SECURITY_SCAN_OSV=$(yq 'if .security | has("scan_osv") then .security.scan_osv else true end' "$CONFIG")
+        SECURITY_SCAN_SECRETS=$(yq 'if .security | has("scan_secrets") then .security.scan_secrets else true end' "$CONFIG")
+        SECURITY_SCAN_SAST=$(yq 'if .security | has("scan_sast") then .security.scan_sast else true end' "$CONFIG")
+        SECURITY_FAIL=$(yq 'if .security | has("fail_on_findings") then .security.fail_on_findings else true end' "$CONFIG")
 
         # Quality (Pulse) — enabled by default
-        QUALITY_ENABLED=$(yq '.quality.enabled // true' "$CONFIG")
+        QUALITY_ENABLED=$(yq 'if .quality | has("enabled") then .quality.enabled else true end' "$CONFIG")
         QUALITY_MAX_CCN=$(yq '.quality.max_ccn // 15' "$CONFIG")
         QUALITY_MAX_COG=$(yq '.quality.max_cognitive // 20' "$CONFIG")
         QUALITY_MAX_DUP=$(yq '.quality.max_duplication // 5' "$CONFIG")
         QUALITY_MIN_MI=$(yq '.quality.min_maintainability // 40' "$CONFIG")
-        QUALITY_FAIL=$(yq '.quality.fail_on_gate // true' "$CONFIG")
-        [ "$QUALITY_ENABLED" = "null" ] && QUALITY_ENABLED="true"
+        QUALITY_FAIL=$(yq 'if .quality | has("fail_on_gate") then .quality.fail_on_gate else true end' "$CONFIG")
 
         echo "app_name=$APP_NAME" >> $GITHUB_OUTPUT
         echo "has_frontend=$HAS_FRONTEND" >> $GITHUB_OUTPUT
