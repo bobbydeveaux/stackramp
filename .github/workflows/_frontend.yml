@@ -99,7 +99,7 @@ jobs:
           wif_provider: ${{ inputs.wif_provider }}
           service_account: ${{ inputs.service_account }}
 
-      - name: Detect Node version
+      - name: Detect Node version and package manager
         if: inputs.frontend_framework != 'static'
         id: node-version
         run: |
@@ -109,13 +109,28 @@ jobs:
             echo "version=20" >> $GITHUB_OUTPUT
           fi
 
+          if [ -f "${{ inputs.frontend_dir }}/pnpm-lock.yaml" ]; then
+            echo "pm=pnpm" >> $GITHUB_OUTPUT
+          elif [ -f "${{ inputs.frontend_dir }}/yarn.lock" ]; then
+            echo "pm=yarn" >> $GITHUB_OUTPUT
+          else
+            echo "pm=npm" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup pnpm
+        if: inputs.frontend_framework != 'static' && steps.node-version.outputs.pm == 'pnpm'
+        uses: pnpm/action-setup@v4
+
       - name: Setup Node.js
         if: inputs.frontend_framework != 'static'
         uses: actions/setup-node@v4
         with:
           node-version: ${{ steps.node-version.outputs.version }}
-          cache: npm
-          cache-dependency-path: "**/package-lock.json"
+          cache: ${{ steps.node-version.outputs.pm }}
+          cache-dependency-path: |
+            ${{ steps.node-version.outputs.pm == 'pnpm' && format('{0}/pnpm-lock.yaml', inputs.frontend_dir) || '' }}
+            ${{ steps.node-version.outputs.pm == 'yarn' && format('{0}/yarn.lock', inputs.frontend_dir) || '' }}
+            ${{ steps.node-version.outputs.pm == 'npm' && format('{0}/package-lock.json', inputs.frontend_dir) || '' }}
 
       - name: Install & Build
         if: inputs.frontend_framework != 'static'
@@ -124,8 +139,16 @@ jobs:
         run: |
           cd ${{ inputs.frontend_dir }}
           mkdir -p public
-          npm ci
-          npm run build
+          if [ "${{ steps.node-version.outputs.pm }}" = "pnpm" ]; then
+            pnpm install --frozen-lockfile
+            pnpm run build
+          elif [ "${{ steps.node-version.outputs.pm }}" = "yarn" ]; then
+            yarn install --frozen-lockfile
+            yarn build
+          else
+            npm ci
+            npm run build
+          fi
 
       - name: Copy static files to dist
         if: inputs.frontend_framework == 'static'
