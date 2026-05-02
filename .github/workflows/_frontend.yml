@@ -225,7 +225,7 @@ jobs:
           # Go proxy reads BACKEND_URL at runtime for /api/* proxying
           [ -n "${{ inputs.backend_url }}" ] && DEPLOY_FLAGS+=(--set-env-vars="BACKEND_URL=${{ inputs.backend_url }}")
           if [ -n "${{ inputs.vpc_connector }}" ]; then
-            DEPLOY_FLAGS+=(--vpc-connector="${{ inputs.vpc_connector }}" --vpc-egress=private-ranges-only)
+            DEPLOY_FLAGS+=(--vpc-connector="${{ inputs.vpc_connector }}" --vpc-egress=all-traffic)
           fi
 
           gcloud run deploy "${{ inputs.app_name }}-fe-${{ inputs.environment }}" "${DEPLOY_FLAGS[@]}"
