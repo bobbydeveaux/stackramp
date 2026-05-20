@@ -174,7 +174,7 @@ jobs:
             --args="-c,${{ inputs.migrate_command }}"
           )
           [ -n "${{ inputs.cloudsql_connection_name }}" ] && \
-            JOB_FLAGS+=(--add-cloudsql-instances="${{ inputs.cloudsql_connection_name }}")
+            JOB_FLAGS+=(--set-cloudsql-instances="${{ inputs.cloudsql_connection_name }}")
           [ -n "${{ inputs.vpc_connector }}" ] && \
             JOB_FLAGS+=(--vpc-connector="${{ inputs.vpc_connector }}" --vpc-egress=private-ranges-only)
 
