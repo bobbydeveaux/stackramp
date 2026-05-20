@@ -64,6 +64,17 @@ func main() {
 				}
 			}
 
+			// Forward the IAP-authenticated user identity so backends can do
+			// user-aware authorisation. We re-key the headers under X-Stackramp-*
+			// to avoid Cloud Run's auth layer intercepting the original IAP JWT
+			// (see comment on the fresh-request rationale above).
+			if email := r.Header.Get("X-Goog-Authenticated-User-Email"); email != "" {
+				proxyReq.Header.Set("X-Stackramp-User-Email", strings.TrimPrefix(email, "accounts.google.com:"))
+			}
+			if id := r.Header.Get("X-Goog-Authenticated-User-Id"); id != "" {
+				proxyReq.Header.Set("X-Stackramp-User-Id", strings.TrimPrefix(id, "accounts.google.com:"))
+			}
+
 			resp, err := http.DefaultClient.Do(proxyReq)
 			if err != nil {
 				log.Printf("ERROR: backend request: %v", err)
