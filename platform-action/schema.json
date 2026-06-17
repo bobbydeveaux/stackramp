@@ -105,7 +105,7 @@
                     "type": "string",
                     "enum": ["private", "public"],
                     "default": "private",
-                    "description": "private (default) enforces public access prevention. public leaves it inherited."
+                    "description": "Bucket access. Only 'private' (the default) is supported: public access prevention is enforced. 'public' is reserved for a future release and is currently rejected at validation time (public buckets / CDN fronting are out of scope)."
                   },
                   "signed_urls": {
                     "type": "boolean",

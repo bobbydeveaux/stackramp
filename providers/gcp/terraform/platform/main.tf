@@ -262,9 +262,11 @@ resource "google_cloud_run_domain_mapping" "sso_frontend" {
 #
 #   2. storage.buckets block — buckets_json carries an array of bucket configs.
 #      Provisioned with for_each keyed on logical name. Bucket name follows
-#      {project}-{app}-{env}-{name}. Each bucket grants the Cloud Run runtime SA
-#      objectAdmin scoped to that bucket, optional age-based lifecycle delete,
-#      and (when signed_urls) keyless V4 signing via serviceAccountTokenCreator.
+#      {project}-{app}-{env}-{name}. All buckets are private (public access
+#      prevention enforced) — public buckets are out of scope. Each bucket
+#      grants the Cloud Run runtime SA objectAdmin scoped to that bucket,
+#      optional age-based lifecycle delete, and (when signed_urls) keyless V4
+#      signing via serviceAccountTokenCreator.
 #
 # The Cloud Run runtime SA for backends is the project default compute SA. The
 # frontend_sa_email var is the SSO frontend proxy identity, NOT the backend
@@ -279,13 +281,13 @@ locals {
   runtime_sa_id    = "projects/${var.platform_project}/serviceAccounts/${local.runtime_sa_email}"
 
   # Decode the storage.buckets block into a map keyed by logical name, applying
-  # defaults for omitted fields. access defaults to private; signed_urls and
-  # lifecycle_days default off.
+  # defaults for omitted fields. signed_urls and lifecycle_days default off.
+  # Buckets are always private — public access is out of scope and is rejected
+  # earlier in platform-action/action.yml, so no access field is carried here.
   bucket_list = jsondecode(var.buckets_json)
   buckets = {
     for b in local.bucket_list : b.name => {
       name           = b.name
-      access         = try(b.access, "private")
       signed_urls    = try(b.signed_urls, false)
       lifecycle_days = try(b.lifecycle_days, 0)
       bucket_name    = "${var.platform_project}-${var.app_name}-${var.environment}-${b.name}"
@@ -337,7 +339,7 @@ resource "google_storage_bucket" "app_bucket" {
   force_destroy = false
 
   uniform_bucket_level_access = true
-  public_access_prevention    = each.value.access == "public" ? "inherited" : "enforced"
+  public_access_prevention    = "enforced"
 
   dynamic "lifecycle_rule" {
     for_each = each.value.lifecycle_days > 0 ? [each.value.lifecycle_days] : []
@@ -353,6 +355,15 @@ resource "google_storage_bucket" "app_bucket" {
 
   lifecycle {
     prevent_destroy = false
+
+    # GCS bucket names are capped at 63 characters. The resolved name is
+    # {project}-{app}-{env}-{logical}, so a long project prefix can overflow
+    # and fail at apply with an opaque GCS 400. Fail early with a clear message
+    # naming the logical bucket, the resolved name, and its length.
+    precondition {
+      condition     = length(each.value.bucket_name) <= 63
+      error_message = "GCS bucket name for logical bucket '${each.value.name}' is ${length(each.value.bucket_name)} characters (max 63): '${each.value.bucket_name}'. Shorten the bucket 'name', app name, or environment."
+    }
   }
 }
 

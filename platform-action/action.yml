@@ -181,6 +181,48 @@ runs:
             echo "::error::Every storage.buckets entry must have a non-empty 'name'."
             exit 1
           fi
+
+          # Logical names must be unique. Terraform keys local.buckets by name, so
+          # duplicates silently collapse (last-wins) and drop a bucket with no error.
+          # Catch it here and name the offending logical bucket.
+          DUP_NAME=$(echo "$STORAGE_BUCKETS" | yq e -p=json -o=tsv '.[].name' - | sort | uniq -d | head -n1)
+          if [ -n "$DUP_NAME" ]; then
+            echo "::error::Duplicate storage.buckets name '$DUP_NAME'. Each bucket must have a unique logical 'name'."
+            exit 1
+          fi
+
+          # Public buckets are out of scope. access: public would otherwise produce a
+          # bucket that is NOT actually anonymously readable (uniform access stays on
+          # and allUsers is never granted), which is misleading. Reject it explicitly.
+          PUBLIC_NAME=$(echo "$STORAGE_BUCKETS" | yq e -p=json -o=tsv '.[] | select(.access == "public") | .name' - | head -n1)
+          if [ -n "$PUBLIC_NAME" ]; then
+            echo "::error::storage.buckets entry '$PUBLIC_NAME' sets access: public, which is not yet supported. All StackRamp buckets are private (public access prevention enforced). Remove the access field or set it to 'private'."
+            exit 1
+          fi
+
+          # GCS caps bucket names at 63 chars. The resolved name is
+          # {project}-{app}-{env}-{name}; a long project prefix can push it over,
+          # failing at terraform apply with an opaque GCS 400. Fail early here when
+          # the project id is known (STACKRAMP_PROJECT, injected by the platform
+          # workflow). The platform deploys to environments 'dev' and 'prod' from a
+          # single parse, so check against the longest ('prod', 4 chars): if it fits
+          # for prod it fits for dev. The Terraform precondition is the authoritative
+          # backstop for any env not covered here.
+          PROJECT_ID="${STACKRAMP_PROJECT:-}"
+          if [ -n "$PROJECT_ID" ]; then
+            WORST_ENV="prod"
+            while IFS= read -r LOGICAL; do
+              [ -z "$LOGICAL" ] && continue
+              RESOLVED="${PROJECT_ID}-${APP_NAME}-${WORST_ENV}-${LOGICAL}"
+              LEN=${#RESOLVED}
+              if [ "$LEN" -gt 63 ]; then
+                OVER=$((LEN - 63))
+                echo "::error::Resolved GCS bucket name '$RESOLVED' for bucket '$LOGICAL' is $LEN characters, $OVER over the 63-char GCS limit. Shorten the bucket 'name' or app name."
+                exit 1
+              fi
+            done < <(echo "$STORAGE_BUCKETS" | yq e -p=json -o=tsv '.[].name' -)
+          fi
+
           { [ -z "$STORAGE_BUCKETS" ] || [ "$STORAGE_BUCKETS" = "null" ]; } && STORAGE_BUCKETS="[]"
           if [ "$STORAGE_BUCKETS" != "[]" ]; then
             STORAGE_TYPE="gcs"

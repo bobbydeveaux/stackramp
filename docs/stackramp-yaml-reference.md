@@ -213,17 +213,17 @@ Object storage. There are two forms, both supported:
 storage:
   buckets:
     - name: downloads        # logical name -> env var BUCKET_DOWNLOADS
-      access: private        # private (default) | public
+      access: private        # private only — public is not yet supported
       signed_urls: true      # grant the SA keyless V4 signBlob (no key file)
       lifecycle_days: 0      # optional object TTL in days (0 = no rule)
 ```
 
-For each entry in `buckets` the platform provisions a bucket named `{project}-{app}-{env}-{name}` with uniform bucket-level access, and:
+For each entry in `buckets` the platform provisions a **private** bucket named `{project}-{app}-{env}-{name}` with uniform bucket-level access. The resolved name must be **63 characters or fewer** (the GCS limit); deploys with a longer name fail validation early, so keep logical names short. Each bucket has:
 
 | Field | Default | Behaviour |
 |---|---|---|
 | `name` | *(required)* | Logical name. Lowercase slug. Injected as env var `BUCKET_<NAME_UPPER>` (hyphens become underscores, e.g. `user-uploads` -> `BUCKET_USER_UPLOADS`). Bucket resolves to `{project}-{app}-{env}-{name}`. |
-| `access` | `private` | `private` turns **public access prevention** ON (anonymous access is rejected). `public` leaves it `inherited`. |
+| `access` | `private` | Only `private` is supported: **public access prevention** is enforced (anonymous access is rejected). `access: public` is reserved for a future release and is currently a hard validation error — public buckets / CDN fronting are out of scope. |
 | `signed_urls` | `false` | When `true`, grants the runtime SA `roles/iam.serviceAccountTokenCreator` **on itself** so the backend can mint V4 signed URLs via `signBlob` with **no exported key file** (keyless signing). |
 | `lifecycle_days` | `0` | When `> 0`, adds an age-based **delete** lifecycle rule of that many days. `0` adds no rule. |
 

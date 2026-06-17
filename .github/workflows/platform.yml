@@ -86,6 +86,10 @@ jobs:
         uses: bobbydeveaux/stackramp/platform-action@main
         with:
           config_path: ${{ inputs.config_path }}
+        env:
+          # Used by the action to pre-validate resolved GCS bucket-name length
+          # ({project}-{app}-{env}-{name} must be <= 63 chars).
+          STACKRAMP_PROJECT: ${{ vars.STACKRAMP_PROJECT }}
 
       - name: Detect changes
         id: changes

@@ -344,14 +344,14 @@ backend:
 storage:
   buckets:
     - name: downloads        # -> env var BUCKET_DOWNLOADS
-      access: private        # private (default) | public
+      access: private        # private only — public is not yet supported
       signed_urls: true      # keyless V4 signed URLs (signBlob, no key file)
       lifecycle_days: 2      # delete objects after 2 days (0 = no rule)
 ```
 
-For each entry the platform provisions a bucket named `{project}-{app}-{env}-{name}` (e.g. `bj-platform-dev-my-app-dev-downloads`) with uniform bucket-level access, grants the runtime SA `roles/storage.objectAdmin` scoped to that bucket, and injects the bucket name as `BUCKET_<NAME_UPPER>` (hyphens become underscores).
+For each entry the platform provisions a **private** bucket named `{project}-{app}-{env}-{name}` (e.g. `bj-platform-dev-my-app-dev-downloads`) with uniform bucket-level access, grants the runtime SA `roles/storage.objectAdmin` scoped to that bucket, and injects the bucket name as `BUCKET_<NAME_UPPER>` (hyphens become underscores). The resolved name must be 63 characters or fewer (the GCS limit) — longer names fail validation early, so keep logical names short.
 
-- **`access: private`** (default) turns public access prevention ON — anonymous reads are rejected.
+- **`access`** — only `private` (the default) is supported: public access prevention is enforced and anonymous reads are rejected. `access: public` is reserved for a future release and is currently a hard validation error (public buckets / CDN fronting are out of scope).
 - **`signed_urls: true`** grants the runtime SA `roles/iam.serviceAccountTokenCreator` on itself, so the backend can mint V4 signed URLs via the IAM `signBlob` API with **no downloaded key file**. This is the keyless signing pattern: build the signer from the runtime credentials, set `GoogleAccessID` to the runtime SA email, and the IAM credentials API signs the bytes.
 - **`lifecycle_days`** adds an age-based delete lifecycle rule when greater than 0.
 
