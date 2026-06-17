@@ -92,6 +92,12 @@ resource "google_project_iam_member" "platform_roles" {
     "roles/firebase.admin",
     "roles/secretmanager.admin",
     "roles/iam.serviceAccountUser",
+    # serviceAccountAdmin lets the deployer get/set IAM policy on service
+    # accounts. Required by the storage.buckets signed_urls path: the platform
+    # binds roles/iam.serviceAccountTokenCreator on the runtime SA *to itself*
+    # for keyless V4 signing, and that binding reads+writes the SA's IAM policy.
+    # Without this, terraform apply 403s on iam.serviceAccounts.getIamPolicy.
+    "roles/iam.serviceAccountAdmin",
     "roles/cloudsql.admin",
     "roles/storage.admin",
     "roles/dns.admin",
