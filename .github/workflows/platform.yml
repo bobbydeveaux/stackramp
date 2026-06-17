@@ -60,6 +60,7 @@ jobs:
       custom_domain: ${{ steps.config.outputs.custom_domain }}
       has_storage: ${{ steps.config.outputs.has_storage }}
       storage_type: ${{ steps.config.outputs.storage_type }}
+      storage_buckets: ${{ steps.config.outputs.storage_buckets }}
       has_sso: ${{ steps.config.outputs.has_sso }}
       min_instances: ${{ steps.config.outputs.min_instances }}
       migrate_command: ${{ steps.config.outputs.migrate_command }}
@@ -85,6 +86,10 @@ jobs:
         uses: bobbydeveaux/stackramp/platform-action@main
         with:
           config_path: ${{ inputs.config_path }}
+        env:
+          # Used by the action to pre-validate resolved GCS bucket-name length
+          # ({project}-{app}-{env}-{name} must be <= 63 chars).
+          STACKRAMP_PROJECT: ${{ vars.STACKRAMP_PROJECT }}
 
       - name: Detect changes
         id: changes
@@ -167,6 +172,8 @@ jobs:
       site_id_prod: ${{ steps.tf-out-prod.outputs.site_id }}
       storage_bucket_dev: ${{ steps.tf-out-dev.outputs.storage_bucket }}
       storage_bucket_prod: ${{ steps.tf-out-prod.outputs.storage_bucket }}
+      bucket_env_json_dev: ${{ steps.tf-out-dev.outputs.bucket_env_json }}
+      bucket_env_json_prod: ${{ steps.tf-out-prod.outputs.bucket_env_json }}
       database_secret_name_dev: ${{ steps.tf-out-dev.outputs.database_secret_name }}
       database_secret_name_prod: ${{ steps.tf-out-prod.outputs.database_secret_name }}
     steps:
@@ -195,6 +202,10 @@ jobs:
 
       - name: Terraform apply (dev)
         working-directory: .stackramp/providers/gcp/terraform/platform
+        env:
+          # buckets_json carries quotes/spaces, so it is passed via env and a
+          # separate quoted -var argument rather than the unquoted TF_VARS blob.
+          BUCKETS_JSON: ${{ needs.parse-config.outputs.storage_buckets }}
         run: |
           # For auto-generated subdomains (app.base_domain), dev gets app.dev.base_domain.
           # Explicit domains (e.g. stackramp.io set directly in stackramp.yaml) are left as-is.
@@ -223,7 +234,7 @@ jobs:
             -var=iap_allowed_domain=${{ vars.STACKRAMP_IAP_DOMAIN || '' }} \
             -var=frontend_sa_email=${{ vars.STACKRAMP_FRONTEND_SA || '' }}"
 
-          terraform apply -auto-approve $TF_VARS
+          terraform apply -auto-approve $TF_VARS -var="buckets_json=${BUCKETS_JSON:-[]}"
 
       - name: Capture dev outputs
         id: tf-out-dev
@@ -233,6 +244,7 @@ jobs:
           echo "frontend_url=$(terraform output -raw frontend_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "site_id=$(terraform output -raw site_id 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "storage_bucket=$(terraform output -raw storage_bucket 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          echo "bucket_env_json=$(terraform output -raw bucket_env_json 2>/dev/null || echo '{}')" >> $GITHUB_OUTPUT
           echo "database_secret_name=$(terraform output -raw database_secret_name 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
 
       - name: Terraform init (prod)
@@ -246,6 +258,8 @@ jobs:
       - name: Terraform apply (prod — main branch only)
         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         working-directory: .stackramp/providers/gcp/terraform/platform
+        env:
+          BUCKETS_JSON: ${{ needs.parse-config.outputs.storage_buckets }}
         run: |
           CUSTOM_DOMAIN="${{ needs.parse-config.outputs.custom_domain }}"
           BACKEND_DOMAIN=""
@@ -267,7 +281,7 @@ jobs:
             -var=iap_allowed_domain=${{ vars.STACKRAMP_IAP_DOMAIN || '' }} \
             -var=frontend_sa_email=${{ vars.STACKRAMP_FRONTEND_SA || '' }}"
 
-          terraform apply -auto-approve $TF_VARS
+          terraform apply -auto-approve $TF_VARS -var="buckets_json=${BUCKETS_JSON:-[]}"
 
       - name: Capture prod outputs
         id: tf-out-prod
@@ -278,6 +292,7 @@ jobs:
           echo "frontend_url=$(terraform output -raw frontend_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "site_id=$(terraform output -raw site_id 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "storage_bucket=$(terraform output -raw storage_bucket 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          echo "bucket_env_json=$(terraform output -raw bucket_env_json 2>/dev/null || echo '{}')" >> $GITHUB_OUTPUT
           echo "database_secret_name=$(terraform output -raw database_secret_name 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
 
   # ─────────────────────────────────────────────────────────────────────────────
@@ -336,6 +351,7 @@ jobs:
       service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
       frontend_url: ${{ needs.provision.outputs.frontend_url_dev }}
       storage_bucket: ${{ needs.provision.outputs.storage_bucket_dev }}
+      bucket_env_json: ${{ needs.provision.outputs.bucket_env_json_dev }}
       cloudsql_connection_name: ${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }}
       vpc_connector: ${{ vars.STACKRAMP_VPC_CONNECTOR || '' }}
       database_secret_name: ${{ needs.provision.outputs.database_secret_name_dev }}
@@ -401,6 +417,7 @@ jobs:
       service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
       frontend_url: ${{ needs.provision.outputs.frontend_url_prod }}
       storage_bucket: ${{ needs.provision.outputs.storage_bucket_prod }}
+      bucket_env_json: ${{ needs.provision.outputs.bucket_env_json_prod }}
       cloudsql_connection_name: ${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }}
       vpc_connector: ${{ vars.STACKRAMP_VPC_CONNECTOR || '' }}
       database_secret_name: ${{ needs.provision.outputs.database_secret_name_prod }}

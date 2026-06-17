@@ -20,7 +20,14 @@ backend:
 
 database: false        # false | postgres | mysql (Phase 2)
 
-# storage: gcs         # false | gcs — provisions a GCS bucket + injects GCS_BUCKET env var
+# storage: gcs         # false | gcs — legacy single bucket, injects GCS_BUCKET env var
+#
+# storage:             # block form — one or more private GCS buckets
+#   buckets:
+#     - name: downloads        # -> env var BUCKET_DOWNLOADS, bucket {project}-{app}-{env}-downloads (<= 63 chars)
+#       access: private        # private only — public is not yet supported
+#       signed_urls: true      # keyless V4 signed URLs (signBlob, no key file)
+#       lifecycle_days: 0      # optional delete-after-N-days (0 = no rule)
 
 # ── Security & Quality (both enabled by default — no config needed) ──────────
 # security:              # Guardian security scanning
