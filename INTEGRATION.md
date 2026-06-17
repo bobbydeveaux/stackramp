@@ -71,7 +71,7 @@ domain: my-app.yourdomain.com # optional custom domain
 
 database: false               # false | postgres | mysql (default: false)
 
-storage: false                # false | gcs (default: false)
+storage: false                # false | gcs | { buckets: [...] } (default: false)
 ```
 
 **Frontend-only example:**
@@ -239,7 +239,8 @@ The following env vars are injected into every Cloud Run service at deploy time:
 | `ENVIRONMENT` | `dev`, `prod`, or `pr-{number}` |
 | `APP_NAME` | Value of `name` in `stackramp.yaml` |
 | `FRONTEND_URL` | Firebase Hosting URL for the same environment |
-| `STORAGE_BUCKET` | GCS bucket name (only if `storage: gcs`) |
+| `GCS_BUCKET` | GCS bucket name (only if `storage: gcs`, the legacy scalar form) |
+| `BUCKET_<NAME>` | One per `storage.buckets` entry, e.g. `BUCKET_DOWNLOADS` (block form) |
 | `DATABASE_SECRET_NAME` | Secret Manager secret name for DB URL (only if `database:` is set) |
 
 ---
@@ -313,7 +314,11 @@ On every PR:
 
 ## GCS Storage
 
-Set `storage: gcs` in `stackramp.yaml` to provision a GCS bucket per environment.
+StackRamp provisions private GCS buckets for your app, wires the Cloud Run runtime service account's IAM, and injects the bucket name(s) as env vars. No manual GCP steps. There are two forms.
+
+### Legacy scalar form
+
+Set `storage: gcs` to provision a single bucket named `{app}-data-{env}`. The `GCS_BUCKET` env var is injected into the Cloud Run service at deploy time, and the runtime SA is granted `roles/storage.objectAdmin` on it.
 
 ```yaml
 name: my-app
@@ -325,7 +330,32 @@ backend:
 storage: gcs
 ```
 
-The bucket name follows the convention `{project}-{app}-{env}` (e.g. `bj-platform-dev-my-app-dev`). The `STORAGE_BUCKET` env var is injected into the Cloud Run service at deploy time.
+### Block form (one or more named buckets)
+
+Declare named buckets under `storage.buckets`:
+
+```yaml
+name: my-app
+
+backend:
+  language: go
+  dir: backend
+
+storage:
+  buckets:
+    - name: downloads        # -> env var BUCKET_DOWNLOADS
+      access: private        # private (default) | public
+      signed_urls: true      # keyless V4 signed URLs (signBlob, no key file)
+      lifecycle_days: 2      # delete objects after 2 days (0 = no rule)
+```
+
+For each entry the platform provisions a bucket named `{project}-{app}-{env}-{name}` (e.g. `bj-platform-dev-my-app-dev-downloads`) with uniform bucket-level access, grants the runtime SA `roles/storage.objectAdmin` scoped to that bucket, and injects the bucket name as `BUCKET_<NAME_UPPER>` (hyphens become underscores).
+
+- **`access: private`** (default) turns public access prevention ON — anonymous reads are rejected.
+- **`signed_urls: true`** grants the runtime SA `roles/iam.serviceAccountTokenCreator` on itself, so the backend can mint V4 signed URLs via the IAM `signBlob` API with **no downloaded key file**. This is the keyless signing pattern: build the signer from the runtime credentials, set `GoogleAccessID` to the runtime SA email, and the IAM credentials API signs the bytes.
+- **`lifecycle_days`** adds an age-based delete lifecycle rule when greater than 0.
+
+**Back-compat:** `storage: false` and `storage: gcs` are unchanged. Use either the scalar form or the block form, not both in one file.
 
 ---
 

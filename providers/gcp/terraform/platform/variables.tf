@@ -44,9 +44,21 @@ variable "has_backend" {
 }
 
 variable "has_storage" {
-  description = "Whether to provision a GCS bucket for this app"
+  description = "Back-compat: whether to provision the legacy single GCS data bucket (storage: gcs). Superseded by buckets_json for the storage.buckets block form."
   type        = bool
   default     = false
+}
+
+variable "buckets_json" {
+  description = <<-EOT
+    JSON-encoded array of bucket configs from the storage.buckets block in
+    stackramp.yaml. Each entry: { name, access, signed_urls, lifecycle_days }.
+    Default "[]" = no block-form buckets. Independent of has_storage, which
+    drives the legacy storage: gcs single-bucket path for back-compat.
+    Example: [{"name":"downloads","access":"private","signed_urls":true,"lifecycle_days":0}]
+  EOT
+  type        = string
+  default     = "[]"
 }
 
 variable "has_database" {

@@ -199,16 +199,58 @@ Whether the app needs a managed database. When enabled (Phase 2), the platform w
 
 | | |
 |---|---|
-| Type | `boolean` or `string` |
-| Values | `false`, `gcs` |
+| Type | `boolean`, `string`, or `object` |
+| Values | `false`, `gcs`, or a `{ buckets: [...] }` block |
 | Default | `false` |
 
-Whether the app needs persistent object storage. When `gcs` is set:
-- A GCS bucket named `{app_name}-data-{environment}` is provisioned
-- The Cloud Run service account is granted `roles/storage.objectAdmin`
-- `GCS_BUCKET` env var is automatically injected into the backend service
+Object storage. There are two forms, both supported:
 
-**Example:**
+**Scalar form (legacy, unchanged):** `storage: gcs` provisions a single bucket named `{app_name}-data-{environment}`, grants the Cloud Run runtime service account `roles/storage.objectAdmin`, and injects `GCS_BUCKET` into the backend. `storage: false` (the default) provisions nothing.
+
+**Block form (one or more named buckets):**
+
+```yaml
+storage:
+  buckets:
+    - name: downloads        # logical name -> env var BUCKET_DOWNLOADS
+      access: private        # private (default) | public
+      signed_urls: true      # grant the SA keyless V4 signBlob (no key file)
+      lifecycle_days: 0      # optional object TTL in days (0 = no rule)
+```
+
+For each entry in `buckets` the platform provisions a bucket named `{project}-{app}-{env}-{name}` with uniform bucket-level access, and:
+
+| Field | Default | Behaviour |
+|---|---|---|
+| `name` | *(required)* | Logical name. Lowercase slug. Injected as env var `BUCKET_<NAME_UPPER>` (hyphens become underscores, e.g. `user-uploads` -> `BUCKET_USER_UPLOADS`). Bucket resolves to `{project}-{app}-{env}-{name}`. |
+| `access` | `private` | `private` turns **public access prevention** ON (anonymous access is rejected). `public` leaves it `inherited`. |
+| `signed_urls` | `false` | When `true`, grants the runtime SA `roles/iam.serviceAccountTokenCreator` **on itself** so the backend can mint V4 signed URLs via `signBlob` with **no exported key file** (keyless signing). |
+| `lifecycle_days` | `0` | When `> 0`, adds an age-based **delete** lifecycle rule of that many days. `0` adds no rule. |
+
+The runtime SA is granted `roles/storage.objectAdmin` scoped to each bucket only.
+
+**Keyless signed URLs:** with `signed_urls: true`, application code generates V4 signed URLs without a downloaded service account key. In Go, construct the signer from the runtime credentials and let the IAM `signBlob` API do the signing (`storage.SignedURLOptions` with `GoogleAccessID` set to the runtime SA email and a `SignBytes`/IAM-credentials signer). No `GOOGLE_APPLICATION_CREDENTIALS` key file is needed.
+
+**Back-compat:** `storage: false` and `storage: gcs` continue to behave exactly as before. The block form is additive; mixing the scalar `gcs` form and the block form in one file is not supported (use one or the other).
+
+**Example (block form):**
+```yaml
+name: my-app
+
+backend:
+  language: go
+  dir: backend
+  port: 8080
+
+storage:
+  buckets:
+    - name: downloads
+      access: private
+      signed_urls: true
+      lifecycle_days: 2
+```
+
+**Example (legacy scalar form):**
 ```yaml
 name: my-app
 

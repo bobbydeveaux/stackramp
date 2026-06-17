@@ -253,13 +253,57 @@ resource "google_cloud_run_domain_mapping" "sso_frontend" {
   }
 }
 
-# ── GCS Data Bucket (optional) ────────────────────────────────────────────────
-# When storage: gcs is declared in stackramp.yaml, provisions a persistent
-# data bucket and grants the Cloud Run service account access.
+# ── GCS Buckets ───────────────────────────────────────────────────────────────
+# Two paths, both back-compatible:
+#
+#   1. Legacy single bucket — storage: gcs in stackramp.yaml sets has_storage.
+#      Keeps the original resource name (app_data) and bucket name
+#      ({app_name}-data-{env}) so existing apps see no destroy/recreate.
+#
+#   2. storage.buckets block — buckets_json carries an array of bucket configs.
+#      Provisioned with for_each keyed on logical name. Bucket name follows
+#      {project}-{app}-{env}-{name}. Each bucket grants the Cloud Run runtime SA
+#      objectAdmin scoped to that bucket, optional age-based lifecycle delete,
+#      and (when signed_urls) keyless V4 signing via serviceAccountTokenCreator.
+#
+# The Cloud Run runtime SA for backends is the project default compute SA. The
+# frontend_sa_email var is the SSO frontend proxy identity, NOT the backend
+# runtime identity, so it is deliberately not used here.
 
 data "google_project" "project" {
   project_id = var.platform_project
 }
+
+locals {
+  runtime_sa_email = "${data.google_project.project.number}-compute@developer.gserviceaccount.com"
+  runtime_sa_id    = "projects/${var.platform_project}/serviceAccounts/${local.runtime_sa_email}"
+
+  # Decode the storage.buckets block into a map keyed by logical name, applying
+  # defaults for omitted fields. access defaults to private; signed_urls and
+  # lifecycle_days default off.
+  bucket_list = jsondecode(var.buckets_json)
+  buckets = {
+    for b in local.bucket_list : b.name => {
+      name           = b.name
+      access         = try(b.access, "private")
+      signed_urls    = try(b.signed_urls, false)
+      lifecycle_days = try(b.lifecycle_days, 0)
+      bucket_name    = "${var.platform_project}-${var.app_name}-${var.environment}-${b.name}"
+    }
+  }
+
+  # Logical name -> resolved bucket name, for the env-var output the workflow
+  # turns into BUCKET_<NAME_UPPER> injections.
+  bucket_env = {
+    for k, v in local.buckets : k => v.bucket_name
+  }
+
+  # Any block-form bucket asking for keyless V4 signed URLs needs the runtime SA
+  # granted token-creator on itself. One grant covers all such buckets.
+  any_signed_urls = length([for k, v in local.buckets : k if v.signed_urls]) > 0
+}
+
+# ── Legacy single bucket (storage: gcs) ───────────────────────────────────────
 
 resource "google_storage_bucket" "app_data" {
   count         = var.has_storage ? 1 : 0
@@ -275,12 +319,59 @@ resource "google_storage_bucket" "app_data" {
   }
 }
 
-# Grant Cloud Run service account (default compute SA) objectAdmin on the bucket
+# Grant Cloud Run runtime SA (default compute SA) objectAdmin on the legacy bucket
 resource "google_storage_bucket_iam_member" "app_data_run" {
   count  = var.has_storage ? 1 : 0
   bucket = google_storage_bucket.app_data[0].name
   role   = "roles/storage.objectAdmin"
-  member = "serviceAccount:${data.google_project.project.number}-compute@developer.gserviceaccount.com"
+  member = "serviceAccount:${local.runtime_sa_email}"
+}
+
+# ── storage.buckets block ─────────────────────────────────────────────────────
+
+resource "google_storage_bucket" "app_bucket" {
+  for_each      = local.buckets
+  name          = each.value.bucket_name
+  project       = var.platform_project
+  location      = var.region
+  force_destroy = false
+
+  uniform_bucket_level_access = true
+  public_access_prevention    = each.value.access == "public" ? "inherited" : "enforced"
+
+  dynamic "lifecycle_rule" {
+    for_each = each.value.lifecycle_days > 0 ? [each.value.lifecycle_days] : []
+    content {
+      action {
+        type = "Delete"
+      }
+      condition {
+        age = lifecycle_rule.value
+      }
+    }
+  }
+
+  lifecycle {
+    prevent_destroy = false
+  }
+}
+
+# Grant the Cloud Run runtime SA objectAdmin scoped to each block-form bucket
+resource "google_storage_bucket_iam_member" "app_bucket_run" {
+  for_each = local.buckets
+  bucket   = google_storage_bucket.app_bucket[each.key].name
+  role     = "roles/storage.objectAdmin"
+  member   = "serviceAccount:${local.runtime_sa_email}"
+}
+
+# Keyless V4 signed URLs: grant the runtime SA token-creator on ITSELF so the
+# backend can call signBlob with no exported key file. Granted once when any
+# block-form bucket sets signed_urls: true.
+resource "google_service_account_iam_member" "runtime_sa_token_creator" {
+  count              = local.any_signed_urls ? 1 : 0
+  service_account_id = local.runtime_sa_id
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:${local.runtime_sa_email}"
 }
 
 # ── Per-App Postgres Database (optional) ─────────────────────────────────────

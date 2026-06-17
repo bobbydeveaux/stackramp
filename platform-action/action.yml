@@ -50,6 +50,9 @@ outputs:
   storage_type:
     description: "Storage type (gcs or false)"
     value: ${{ steps.parse.outputs.storage_type }}
+  storage_buckets:
+    description: "JSON array of storage.buckets configs ([] when none or scalar form). Each entry: {name, access, signed_urls, lifecycle_days}."
+    value: ${{ steps.parse.outputs.storage_buckets }}
   has_sso:
     description: "Whether SSO (IAP) is enabled for this app"
     value: ${{ steps.parse.outputs.has_sso }}
@@ -150,13 +153,44 @@ runs:
         HAS_DATABASE="false"
         [ "$DATABASE" != "false" ] && [ "$DATABASE" != "null" ] && HAS_DATABASE="true"
 
-        STORAGE=$(yq e '.storage // "false"' "$CONFIG")
-        if [ "$STORAGE" = "gcs" ]; then
-          HAS_STORAGE="true"
-          STORAGE_TYPE="gcs"
+        # storage: can be a scalar (false | gcs) for the legacy single bucket,
+        # or a block ({ buckets: [...] }) declaring one or more named buckets.
+        # Detect the block form by counting .storage.buckets entries. A scalar
+        # storage value yields an empty length, so default to 0 and treat any
+        # positive count as the block form. (Comparing the yq node tag, e.g.
+        # "!!seq", is avoided — the "!" trips shell history expansion.)
+        HAS_STORAGE="false"
+        STORAGE_TYPE="false"
+        STORAGE_BUCKETS="[]"
+        BUCKET_COUNT=$(yq e '.storage.buckets | length' "$CONFIG" 2>/dev/null)
+        [ -z "$BUCKET_COUNT" ] || [ "$BUCKET_COUNT" = "null" ] && BUCKET_COUNT=0
+        if [ "$BUCKET_COUNT" -gt 0 ]; then
+          # Block form: emit the buckets array as compact JSON for downstream
+          # Terraform consumption. Apply defaults (access=private, signed_urls=false,
+          # lifecycle_days=0) so the JSON is fully populated and self-describing.
+          STORAGE_BUCKETS=$(yq e -o=json -I=0 '
+            [.storage.buckets[] | {
+              "name": .name,
+              "access": (.access // "private"),
+              "signed_urls": (.signed_urls // false),
+              "lifecycle_days": (.lifecycle_days // 0)
+            }]
+          ' "$CONFIG")
+          # Validate every bucket has a non-empty name; abort early with a clear error.
+          if echo "$STORAGE_BUCKETS" | yq e -p=json '.[] | select(.name == null or .name == "")' - | grep -q .; then
+            echo "::error::Every storage.buckets entry must have a non-empty 'name'."
+            exit 1
+          fi
+          { [ -z "$STORAGE_BUCKETS" ] || [ "$STORAGE_BUCKETS" = "null" ]; } && STORAGE_BUCKETS="[]"
+          if [ "$STORAGE_BUCKETS" != "[]" ]; then
+            STORAGE_TYPE="gcs"
+          fi
         else
-          HAS_STORAGE="false"
-          STORAGE_TYPE="false"
+          STORAGE=$(yq e '.storage // "false"' "$CONFIG")
+          if [ "$STORAGE" = "gcs" ]; then
+            HAS_STORAGE="true"
+            STORAGE_TYPE="gcs"
+          fi
         fi
 
         FRONTEND_SSO=$(yq '.frontend.sso // false' "$CONFIG")
@@ -218,6 +252,7 @@ runs:
         echo "provider=$PROVIDER" >> $GITHUB_OUTPUT
         echo "has_storage=$HAS_STORAGE" >> $GITHUB_OUTPUT
         echo "storage_type=$STORAGE_TYPE" >> $GITHUB_OUTPUT
+        echo "storage_buckets=$STORAGE_BUCKETS" >> $GITHUB_OUTPUT
         echo "custom_domain=$CUSTOM_DOMAIN" >> $GITHUB_OUTPUT
         echo "has_sso=$HAS_SSO" >> $GITHUB_OUTPUT
         echo "migrate_command=$MIGRATE_COMMAND" >> $GITHUB_OUTPUT
@@ -237,7 +272,7 @@ runs:
         echo "Frontend: $FRONTEND_FRAMEWORK ($FRONTEND_DIR)"
         echo "Backend: $BACKEND_LANG ($BACKEND_DIR:$BACKEND_PORT)"
         echo "Database: $DATABASE"
-        echo "Storage: $STORAGE"
+        echo "Storage: type=$STORAGE_TYPE buckets=$STORAGE_BUCKETS"
         echo "SSO: $HAS_SSO"
         echo "Migrate: ${MIGRATE_COMMAND:-none}"
         echo "Provider: $PROVIDER"

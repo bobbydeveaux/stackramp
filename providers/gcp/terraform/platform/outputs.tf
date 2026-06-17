@@ -18,8 +18,17 @@ output "backend_url" {
 }
 
 output "storage_bucket" {
-  description = "GCS bucket name for app data (empty if not enabled)"
+  description = "Legacy single GCS bucket name for storage: gcs (empty if not enabled). Back-compat only."
   value       = var.has_storage ? google_storage_bucket.app_data[0].name : ""
+}
+
+output "bucket_env_json" {
+  description = <<-EOT
+    JSON object mapping logical bucket name -> resolved GCS bucket name for the
+    storage.buckets block. The backend deploy job turns each entry into a
+    BUCKET_<NAME_UPPER> env var. Empty object "{}" when no block-form buckets.
+  EOT
+  value       = jsonencode(local.bucket_env)
 }
 
 output "database_secret_name" {

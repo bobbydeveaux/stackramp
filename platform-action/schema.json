@@ -77,6 +77,54 @@
         "fail_on_findings": { "type": "boolean", "default": true }
       }
     },
+    "storage": {
+      "description": "Object storage. Scalar forms (false | gcs) keep the legacy single-bucket behaviour. The object form declares one or more named private GCS buckets.",
+      "default": false,
+      "oneOf": [
+        { "type": "boolean" },
+        { "type": "string", "enum": ["gcs"] },
+        {
+          "type": "object",
+          "required": ["buckets"],
+          "additionalProperties": false,
+          "properties": {
+            "buckets": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["name"],
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]*$",
+                    "description": "Logical bucket name. Injected as env var BUCKET_<NAME_UPPER>. Resolves to bucket gs://{project}-{app}-{env}-{name}."
+                  },
+                  "access": {
+                    "type": "string",
+                    "enum": ["private", "public"],
+                    "default": "private",
+                    "description": "private (default) enforces public access prevention. public leaves it inherited."
+                  },
+                  "signed_urls": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Grant the Cloud Run runtime SA token-creator on itself so the backend can mint keyless V4 signed URLs (signBlob, no key file)."
+                  },
+                  "lifecycle_days": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 0,
+                    "description": "Age-based delete lifecycle rule in days. 0 = no rule."
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
     "quality": {
       "type": "object",
       "description": "Pulse code quality gates. Enabled by default.",

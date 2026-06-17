@@ -50,6 +50,11 @@ on:
         type: string
         required: false
         default: ""
+      bucket_env_json:
+        type: string
+        required: false
+        default: "{}"
+        description: "JSON map of logical bucket name -> resolved GCS bucket name (storage.buckets block). Each entry is injected as env var BUCKET_<NAME_UPPER>."
       extra_env_vars:
         type: string
         required: false
@@ -197,13 +202,27 @@ jobs:
             --wait
 
       - name: Deploy to Cloud Run
+        env:
+          # JSON map passed via env to avoid quote-handling issues inline.
+          BUCKET_ENV_JSON: ${{ inputs.bucket_env_json }}
         run: |
           SERVICE_NAME="${{ inputs.app_name }}-${{ inputs.environment }}"
 
           # ── Env vars (non-secret config) ────────────────────────────────────
           ENV_VARS="ENVIRONMENT=${{ inputs.environment }},APP_NAME=${{ inputs.app_name }},FRONTEND_URL=${{ inputs.frontend_url }}"
+          # Legacy single bucket (storage: gcs) — kept for back-compat.
           if [ -n "${{ inputs.storage_bucket }}" ]; then
             ENV_VARS="${ENV_VARS},GCS_BUCKET=${{ inputs.storage_bucket }}"
+          fi
+          # storage.buckets block — inject one BUCKET_<NAME_UPPER>=<bucketname>
+          # per declared bucket. Mirrors the platform_secrets discovery pattern:
+          # iterate the resolved map and append each key/value as an env var.
+          if [ -n "$BUCKET_ENV_JSON" ] && [ "$BUCKET_ENV_JSON" != "{}" ] && [ "$BUCKET_ENV_JSON" != "null" ]; then
+            while IFS=$'\t' read -r LOGICAL BUCKET; do
+              [ -z "$LOGICAL" ] && continue
+              VAR_NAME="BUCKET_$(echo "$LOGICAL" | tr '[:lower:]-' '[:upper:]_')"
+              ENV_VARS="${ENV_VARS},${VAR_NAME}=${BUCKET}"
+            done < <(echo "$BUCKET_ENV_JSON" | jq -r 'to_entries[] | "\(.key)\t\(.value)"')
           fi
           if [ -n "${{ inputs.extra_env_vars }}" ]; then
             ENV_VARS="${ENV_VARS},${{ inputs.extra_env_vars }}"
