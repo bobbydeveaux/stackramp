@@ -133,7 +133,7 @@ func newSPAHandler(distDir string) http.HandlerFunc {
 }
 
 // cachedIdentityToken returns a cached token or fetches a new one.
-// Tokens are cached for 50 minutes (they're valid for "60 minutes).
+// Tokens are cached for 50 minutes (they're valid for ~60 minutes).
 func cachedIdentityToken(audience string) (string, error) {
 	tokenCache.Lock()
 	defer tokenCache.Unlock()
