@@ -242,13 +242,17 @@ jobs:
           # separate quoted -var argument rather than the unquoted TF_VARS blob.
           BUCKETS_JSON: ${{ needs.parse-config.outputs.storage_buckets }}
         run: |
-          # For auto-generated subdomains (app.base_domain), dev gets app.dev.base_domain.
-          # Explicit domains (e.g. stackramp.io set directly in stackramp.yaml) are left as-is.
+          # An auto-generated base-domain subdomain (app.base_domain) gets its own
+          # app.dev.base_domain for dev. An explicit custom domain set in stackramp.yaml
+          # belongs to PROD only — dev must not bind it, or dev and prod would fight over
+          # the same records in the same Cloud DNS zone. dev then uses its .web.app URL.
           CUSTOM_DOMAIN="${{ needs.parse-config.outputs.custom_domain }}"
           BASE_DOMAIN="${{ vars.STACKRAMP_BASE_DOMAIN }}"
           APP="${{ needs.parse-config.outputs.app_name }}"
           if [ -n "$CUSTOM_DOMAIN" ] && [ -n "$BASE_DOMAIN" ] && [ "$CUSTOM_DOMAIN" = "${APP}.${BASE_DOMAIN}" ]; then
             CUSTOM_DOMAIN="${APP}.dev.${BASE_DOMAIN}"
+          elif [ -n "$CUSTOM_DOMAIN" ]; then
+            CUSTOM_DOMAIN=""
           fi
           BACKEND_DOMAIN=""
           [ -n "$CUSTOM_DOMAIN" ] && [ "${{ needs.parse-config.outputs.has_backend }}" = "true" ] && BACKEND_DOMAIN="api.${CUSTOM_DOMAIN}"
