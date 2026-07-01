@@ -18,6 +18,10 @@ terraform {
 locals {
   platform_project = var.platform_project
   region           = var.region
+
+  # Owners trusted by WIF. Defaults to the single github_owner for backward
+  # compatibility; set var.github_owners to trust more than one.
+  github_owners = length(var.github_owners) > 0 ? var.github_owners : [var.github_owner]
 }
 
 provider "google" {
@@ -153,7 +157,7 @@ resource "google_iam_workload_identity_pool_provider" "github" {
     "attribute.repository_owner" = "assertion.repository_owner"
   }
 
-  attribute_condition = "attribute.repository_owner == '${var.github_owner}'"
+  attribute_condition = "attribute.repository_owner in [${join(", ", [for o in local.github_owners : "'${o}'"])}]"
 
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"
@@ -178,6 +182,21 @@ data "google_dns_managed_zone" "existing" {
   count   = var.base_domain != "" && !var.create_dns_zone ? 1 : 0
   name    = replace(var.base_domain, ".", "-")
   project = var.platform_project
+}
+
+# ── Custom-domain Cloud DNS zones ─────────────────────────────────────────────
+# One managed zone per entry in var.custom_domains — lets apps use their own
+# domains (e.g. flowbydeveaux.co.uk) rather than a stackramp base-domain
+# subdomain. The platform workflow auto-detects the zone authoritative for an
+# app's `domain:` and injects records into it. After apply, delegate each
+# domain's nameservers to GCP at the registrar (see custom_domain_nameservers).
+
+resource "google_dns_managed_zone" "custom" {
+  for_each    = toset(var.custom_domains)
+  name        = replace(each.value, ".", "-")
+  dns_name    = "${each.value}."
+  description = "StackRamp custom domain: ${each.value}"
+  depends_on  = [google_project_service.apis]
 }
 
 locals {
@@ -329,9 +348,10 @@ resource "google_sql_database_instance" "platform" {
 }
 
 resource "google_service_account_iam_member" "wif_binding" {
+  for_each           = toset(local.github_owners)
   service_account_id = google_service_account.platform_cicd.name
   role               = "roles/iam.workloadIdentityUser"
-  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository_owner/${var.github_owner}"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository_owner/${each.value}"
 }
 
 # ── IAP Secret Manager shells ─────────────────────────────────────────────────

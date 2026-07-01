@@ -41,7 +41,7 @@ fi
 
 PROJECT_ID=$(grep 'platform_project' "$TFVARS_FILE" | cut -d'"' -f2)
 REGION=$(grep 'region' "$TFVARS_FILE" | cut -d'"' -f2)
-GITHUB_OWNER=$(grep 'github_owner' "$TFVARS_FILE" | cut -d'"' -f2)
+GITHUB_OWNER=$(grep -E '^github_owner[[:space:]]' "$TFVARS_FILE" | cut -d'"' -f2)
 
 print_info "StackRamp Platform Bootstrap — ${ENVIRONMENT}"
 echo "   Project:      $PROJECT_ID"

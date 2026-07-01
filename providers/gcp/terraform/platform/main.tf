@@ -89,8 +89,10 @@ resource "google_firebase_hosting_custom_domain" "app" {
 locals {
   dns_enabled          = var.custom_domain != "" && var.dns_zone_name != ""
   cloudsql_instance_id = var.has_database && var.cloudsql_connection_name != "" ? split(":", var.cloudsql_connection_name)[2] : ""
-  is_subdomain         = local.dns_enabled && length(split(".", var.custom_domain)) > 2
-  firebase_a_records   = ["199.36.158.100", "199.36.158.101"]
+  # Apex (e.g. flowbydeveaux.co.uk) → A records; subdomain → CNAME. domain_is_apex
+  # is computed from the zone's dns_name upstream, so multi-part TLDs are correct.
+  is_subdomain       = local.dns_enabled && !var.domain_is_apex
+  firebase_a_records = ["199.36.158.100", "199.36.158.101"]
 
   # Subdomain CNAME target — Cloud Run domain mapping for SSO apps, Firebase site for Firebase apps
   cname_target = var.has_sso ? "ghs.googlehosted.com." : (length(google_firebase_hosting_site.app) > 0 ? "${google_firebase_hosting_site.app[0].site_id}.web.app." : "")
