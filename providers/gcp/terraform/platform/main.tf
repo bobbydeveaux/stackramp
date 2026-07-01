@@ -80,19 +80,23 @@ resource "google_firebase_hosting_custom_domain" "app" {
 }
 
 # ── Cloud DNS records (if a managed zone is provided) ─────────────────────────
-# Firebase populates required_dns_updates with TXT (ownership verification) and
-# A records. Since Cloud DNS is authoritative, Terraform injects them directly —
-# Firebase polls Cloud DNS, finds the TXT, auto-verifies, and starts serving.
-# Records are only created once Firebase has returned non-empty rrdatas, so the
-# first apply (TXT only) and subsequent applies (TXT + A) are both safe.
+# For an apex custom domain, Firebase needs two records in the authoritative
+# zone, both of which we can derive deterministically (no dependency on the
+# resource's computed required_dns_updates, which can't be for_each'd at plan):
+#   1. A  → Firebase Hosting's serving IP (199.36.158.100).
+#   2. TXT "hosting-site=<site_id>" → proves this site owns the domain, so
+#      Firebase auto-verifies and mints the SSL cert via the HTTP-01 challenge.
+# Subdomains verify via their CNAME instead, so they don't need the TXT.
 
 locals {
   dns_enabled          = var.custom_domain != "" && var.dns_zone_name != ""
   cloudsql_instance_id = var.has_database && var.cloudsql_connection_name != "" ? split(":", var.cloudsql_connection_name)[2] : ""
   # Apex (e.g. flowbydeveaux.co.uk) → A records; subdomain → CNAME. domain_is_apex
   # is computed from the zone's dns_name upstream, so multi-part TLDs are correct.
-  is_subdomain       = local.dns_enabled && !var.domain_is_apex
-  firebase_a_records = ["199.36.158.100", "199.36.158.101"]
+  is_subdomain = local.dns_enabled && !var.domain_is_apex
+  # Firebase Hosting's single apex serving IP. (Publishing the extra .101 makes
+  # Firebase's ACME challenge fail on it and blocks cert minting.)
+  firebase_a_records = ["199.36.158.100"]
 
   # Subdomain CNAME target — Cloud Run domain mapping for SSO apps, Firebase site for Firebase apps
   cname_target = var.has_sso ? "ghs.googlehosted.com." : (length(google_firebase_hosting_site.app) > 0 ? "${google_firebase_hosting_site.app[0].site_id}.web.app." : "")
@@ -111,6 +115,20 @@ resource "google_dns_record_set" "frontend_a" {
   managed_zone = var.dns_zone_name
   project      = var.platform_project
   rrdatas      = local.firebase_a_records
+}
+
+# Apex ownership verification: "hosting-site=<site_id>" proves this Firebase
+# site owns the domain, so Firebase auto-verifies and mints the SSL cert with
+# no manual TXT step. site_id is known at plan time, so this is deterministic.
+# Subdomains verify via their CNAME, so they don't need this.
+resource "google_dns_record_set" "frontend_verify" {
+  count        = local.dns_enabled && !local.is_subdomain && !var.has_sso ? 1 : 0
+  name         = "${var.custom_domain}."
+  type         = "TXT"
+  ttl          = 300
+  managed_zone = var.dns_zone_name
+  project      = var.platform_project
+  rrdatas      = ["\"hosting-site=${google_firebase_hosting_site.app[0].site_id}\""]
 }
 
 # Subdomain CNAME — single resource so transitioning between Firebase and SSO Cloud Run
