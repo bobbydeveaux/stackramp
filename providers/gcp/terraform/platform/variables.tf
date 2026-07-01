@@ -26,9 +26,15 @@ variable "custom_domain" {
 }
 
 variable "dns_zone_name" {
-  description = "Cloud DNS managed zone name (e.g. stackramp-io). Empty = DNS records not managed by Terraform."
+  description = "Cloud DNS managed zone name (e.g. stackramp-io). Empty = DNS records not managed by Terraform (external domain — add records at your registrar). Auto-detected by the platform workflow from the app's domain."
   type        = string
   default     = ""
+}
+
+variable "domain_is_apex" {
+  description = "Whether custom_domain is the apex of its Cloud DNS zone (→ A records) rather than a subdomain (→ CNAME). Computed by the platform workflow from the zone's dns_name, so multi-part TLDs (e.g. co.uk) are handled correctly."
+  type        = bool
+  default     = false
 }
 
 variable "backend_domain" {

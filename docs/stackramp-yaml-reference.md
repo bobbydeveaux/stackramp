@@ -38,13 +38,18 @@ storage: gcs         # optional — provisions a GCS bucket
 | Pattern | `^([a-z0-9-]+\.)+[a-z]{2,}$` |
 | Example | `myapp.io`, `dashboard.myorg.io` |
 
-Custom domain for this app. Supports both root domains and subdomains.
+Custom domain for this app. Supports both root (apex) domains and subdomains, including multi-part TLDs like `flowbydeveaux.co.uk`.
 
 If omitted and the platform has `STACKRAMP_BASE_DOMAIN` configured, the app automatically gets `{name}.{STACKRAMP_BASE_DOMAIN}` (e.g. `my-app.myorg.io`).
 
 If neither is set, the app is served on the default Firebase Hosting URL (`{site-id}.web.app`).
 
-Domain verification is fully automatic — because StackRamp manages Cloud DNS, it injects the required TXT and A records itself with no manual steps.
+At deploy time the platform auto-detects the Cloud DNS zone authoritative for this domain:
+
+- **Managed** — a Cloud DNS zone exists for the domain (the base domain, or one added to the bootstrap `custom_domains` list). StackRamp injects the required TXT + A/CNAME records automatically, with no manual steps.
+- **External** — no Cloud DNS zone exists. StackRamp registers the Firebase custom domain and reports the records to add at your own registrar; your DNS stays where it is.
+
+See INTEGRATION.md → *Custom Domains* for how to provision a zone for your own domain.
 
 ---
 

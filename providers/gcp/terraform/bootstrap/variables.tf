@@ -9,6 +9,18 @@ variable "github_owner" {
   default     = "bobbydeveaux"
 }
 
+variable "github_owners" {
+  description = "GitHub orgs/usernames whose repos may deploy to this platform via WIF. When empty, falls back to [github_owner]. Set this to trust more than one owner."
+  type        = list(string)
+  default     = []
+}
+
+variable "custom_domains" {
+  description = "Additional apex domains to host in Cloud DNS, one managed zone each (e.g. [\"flowbydeveaux.co.uk\"]). Apps can then set `domain:` to these (or a subdomain of them) and the platform auto-detects the zone and injects records. Delegate each domain's nameservers to GCP at your registrar (see the custom_domain_nameservers output)."
+  type        = list(string)
+  default     = []
+}
+
 variable "environment" {
   description = "Environment name (dev or prod)"
   type        = string

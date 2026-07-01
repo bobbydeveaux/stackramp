@@ -200,6 +200,41 @@ jobs:
             -backend-config="bucket=${{ vars.STACKRAMP_PROJECT }}-tf-state" \
             -backend-config="prefix=${{ needs.parse-config.outputs.app_name }}-dev"
 
+      - name: Detect DNS zone for custom domain
+        id: dns
+        run: |
+          # Find the Cloud DNS managed zone authoritative for the app's domain
+          # (longest dns_name suffix match) and whether the domain is that zone's
+          # apex. No match → external domain (Terraform skips Cloud DNS; records
+          # added at the registrar). This is what makes stackramp.io "just work"
+          # and lets any bootstrap-provisioned custom domain work the same way.
+          CUSTOM_DOMAIN="${{ needs.parse-config.outputs.custom_domain }}"
+          ZONE_NAME=""; IS_APEX="false"
+          if [ -n "$CUSTOM_DOMAIN" ]; then
+            FQDN="${CUSTOM_DOMAIN}."
+            BEST=0
+            while read -r zname zdns; do
+              [ -z "$zname" ] && continue
+              case "$FQDN" in
+                "$zdns"|*".$zdns")
+                  zlen=${#zdns}
+                  if [ "$zlen" -gt "$BEST" ]; then
+                    BEST=$zlen
+                    ZONE_NAME="$zname"
+                    if [ "$FQDN" = "$zdns" ]; then IS_APEX="true"; else IS_APEX="false"; fi
+                  fi
+                  ;;
+              esac
+            done < <(gcloud dns managed-zones list --project="${{ vars.STACKRAMP_PROJECT }}" --format="value(name,dnsName)")
+          fi
+          if [ -n "$ZONE_NAME" ]; then
+            echo "Domain '$CUSTOM_DOMAIN' → Cloud DNS zone '$ZONE_NAME' (apex=$IS_APEX); records managed automatically."
+          elif [ -n "$CUSTOM_DOMAIN" ]; then
+            echo "Domain '$CUSTOM_DOMAIN' has no Cloud DNS zone → external mode. Add the records Firebase reports at your registrar."
+          fi
+          echo "zone_name=$ZONE_NAME" >> "$GITHUB_OUTPUT"
+          echo "is_apex=$IS_APEX" >> "$GITHUB_OUTPUT"
+
       - name: Terraform apply (dev)
         working-directory: .stackramp/providers/gcp/terraform/platform
         env:
@@ -225,7 +260,8 @@ jobs:
             -var=region=${{ vars.STACKRAMP_REGION }} \
             -var=custom_domain=${CUSTOM_DOMAIN} \
             -var=backend_domain=${BACKEND_DOMAIN} \
-            -var=dns_zone_name=${{ vars.STACKRAMP_DNS_ZONE || '' }} \
+            -var=dns_zone_name=${{ steps.dns.outputs.zone_name }} \
+            -var=domain_is_apex=${{ steps.dns.outputs.is_apex }} \
             -var=has_backend=${{ needs.parse-config.outputs.has_backend == 'true' }} \
             -var=has_storage=${{ needs.parse-config.outputs.has_storage == 'true' }} \
             -var=has_database=${{ needs.parse-config.outputs.has_database == 'true' }} \
@@ -272,7 +308,8 @@ jobs:
             -var=region=${{ vars.STACKRAMP_REGION }} \
             -var=custom_domain=${CUSTOM_DOMAIN} \
             -var=backend_domain=${BACKEND_DOMAIN} \
-            -var=dns_zone_name=${{ vars.STACKRAMP_DNS_ZONE || '' }} \
+            -var=dns_zone_name=${{ steps.dns.outputs.zone_name }} \
+            -var=domain_is_apex=${{ steps.dns.outputs.is_apex }} \
             -var=has_backend=${{ needs.parse-config.outputs.has_backend == 'true' }} \
             -var=has_storage=${{ needs.parse-config.outputs.has_storage == 'true' }} \
             -var=has_database=${{ needs.parse-config.outputs.has_database == 'true' }} \

@@ -202,16 +202,54 @@ StackRamp uses `dorny/paths-filter` to skip unchanged components on pushes. If o
 
 ## Custom Domains
 
-Set `domain:` in `stackramp.yaml`. StackRamp handles the rest automatically:
+Set `domain:` in `stackramp.yaml`. At deploy time the platform looks up the Cloud
+DNS managed zone **authoritative for that domain** (longest matching zone) and
+picks the mode automatically — you don't declare which mode you're in:
 
-- **Apex domain** (`yourdomain.com`): A records → Firebase's load balancer IPs
-- **Subdomain** (`app.yourdomain.com`): CNAME → `{site-id}.web.app` (Firebase verifies ownership via CNAME and mints SSL automatically)
+- **Managed** (a Cloud DNS zone exists for the domain): StackRamp injects the
+  records for you.
+  - **Apex** (`yourdomain.com` — the zone root): A records → Firebase's load-balancer IPs.
+  - **Subdomain** (`app.yourdomain.com`): CNAME → `{site-id}.web.app`.
 
-For `dev`, the subdomain is prefixed: `app.dev.yourdomain.com`. For `prod`, it uses the domain as-is.
+  Apex vs subdomain is decided by comparing the domain to the zone's `dns_name`,
+  so multi-part TLDs like `flowbydeveaux.co.uk` are treated correctly as apex.
 
-> **Requirement:** `STACKRAMP_DNS_ZONE` must be set as a GitHub Variable and the Cloud DNS zone must be authoritative for the domain (nameservers pointing to GCP).
+- **External** (no Cloud DNS zone for the domain): StackRamp registers the
+  Firebase custom domain only and prints the records Firebase requires — you add
+  the A/TXT records at your own registrar (e.g. 123-reg). DNS stays with you.
+
+For `dev`, an auto-generated base-domain subdomain is prefixed (`app.dev.yourdomain.com`);
+explicit domains are used as-is in both environments.
 
 If you don't set `domain:`, your app gets a `{app-name}-{random}.web.app` Firebase URL.
+
+### Using your own domain (managed mode)
+
+To have StackRamp manage a domain that isn't a subdomain of `STACKRAMP_BASE_DOMAIN`,
+add it to the **bootstrap** so it gets its own Cloud DNS zone — exactly like the
+platform base domain:
+
+```hcl
+# bootstrap dev.tfvars / prod.tfvars
+custom_domains = ["flowbydeveaux.co.uk"]
+```
+
+Apply the bootstrap, then read the nameservers to delegate:
+
+```bash
+terraform output custom_domain_nameservers
+# flowbydeveaux.co.uk = ["ns-cloud-XX.googledomains.com.", ...]
+```
+
+Set those four nameservers at the domain's registrar. Once delegation propagates,
+any app can set `domain: flowbydeveaux.co.uk` (or a subdomain of it) and the
+platform will detect the zone and manage records automatically.
+
+> **Note:** delegating nameservers moves *all* DNS for that domain into Cloud DNS —
+> recreate any existing records (email/MX, etc.) in the zone. If you'd rather keep
+> DNS at your registrar, simply **don't** add the domain to `custom_domains`: the
+> app still deploys and you add the Firebase-reported records at your registrar
+> (external mode above).
 
 ---
 
@@ -383,7 +421,7 @@ Set at org level so all repos inherit them. None of these are secrets.
 | `STACKRAMP_REGION` | `europe-west1` | GCP region for all resources |
 | `STACKRAMP_WIF_PROVIDER` | `projects/123/locations/global/...` | Full WIF provider resource name (from bootstrap output) |
 | `STACKRAMP_SA_EMAIL` | `stackramp-cicd-sa@my-platform-dev.iam.gserviceaccount.com` | Platform CI/CD service account |
-| `STACKRAMP_DNS_ZONE` | `yourdomain-com` | Cloud DNS zone name — only needed for custom domains |
+| `STACKRAMP_DNS_ZONE` | `yourdomain-com` | Informational only — the platform now auto-detects the Cloud DNS zone for each app's domain, so this is no longer required for custom domains |
 | `STACKRAMP_BASE_DOMAIN` | `stackramp.io` | Base domain for auto-generating dev subdomains (e.g. `app.dev.stackramp.io`) |
 | `STACKRAMP_IAP_DOMAIN` | `bobbyjason.co.uk` | Google Workspace domain allowed through IAP — only needed for SSO apps. Omit to allow any Google account. |
 | `STACKRAMP_CLOUDSQL_CONNECTION` | `project:region:instance` | Cloud SQL connection name — only needed for database apps |

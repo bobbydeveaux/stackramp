@@ -33,6 +33,11 @@ output "dns_zone_nameservers" {
   value       = local.dns_zone_nameservers
 }
 
+output "custom_domain_nameservers" {
+  description = "Per custom domain, the GCP nameservers to set at that domain's registrar (delegate the whole domain to Cloud DNS)."
+  value       = { for d, z in google_dns_managed_zone.custom : d => z.name_servers }
+}
+
 output "cloudsql_connection_name" {
   description = "Set as GitHub Variable: STACKRAMP_CLOUDSQL_CONNECTION (only when enable_postgres = true)"
   value       = var.enable_postgres ? google_sql_database_instance.platform[0].connection_name : ""
