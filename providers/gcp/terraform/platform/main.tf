@@ -110,7 +110,18 @@ locals {
   iap_domains = (var.iap_allowed_domain == "" || var.iap_allowed_domain == "*") ? [] : [
     for d in split(",", var.iap_allowed_domain) : trimspace(d) if trimspace(d) != ""
   ]
-  iap_members = length(local.iap_domains) == 0 ? ["allAuthenticatedUsers"] : [for d in local.iap_domains : "domain:${d}"]
+  # Each entry becomes an IAP IAM member. Entries may be:
+  #   - an explicit member ("user:a@b", "group:g@b", "serviceAccount:x", "domain:b") → used as-is
+  #   - an email ("a@b")  → user:a@b   (needed when the user's Workspace domain is
+  #                          NOT the GCP org's domain — domain: bindings only
+  #                          expand for the resource org's own Cloud Identity)
+  #   - a bare domain ("b") → domain:b
+  iap_members = length(local.iap_domains) == 0 ? ["allAuthenticatedUsers"] : [
+    for e in local.iap_domains :
+    can(regex("^(user|group|serviceAccount|domain):", e)) ? e : (
+      can(regex("@", e)) ? "user:${e}" : "domain:${e}"
+    )
+  ]
 }
 
 # Apex domain: A records pointing at Firebase's stable load-balancer IPs (non-SSO only).
