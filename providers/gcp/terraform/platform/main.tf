@@ -101,8 +101,16 @@ locals {
   # Subdomain CNAME target — Cloud Run domain mapping for SSO apps, Firebase site for Firebase apps
   cname_target = var.has_sso ? "ghs.googlehosted.com." : (length(google_firebase_hosting_site.app) > 0 ? "${google_firebase_hosting_site.app[0].site_id}.web.app." : "")
 
-  # IAP member — domain:example.com or allAuthenticatedUsers
-  iap_member = (var.iap_allowed_domain == "" || var.iap_allowed_domain == "*") ? "allAuthenticatedUsers" : "domain:${var.iap_allowed_domain}"
+  # IAP members — one IAM binding per allowed Google Workspace domain.
+  # STACKRAMP_IAP_DOMAIN may be a single domain ("bobbyjason.co.uk"), a
+  # comma-separated list ("thedeveauxgroup.co.uk,bobbyjason.co.uk"), or "" / "*"
+  # for allAuthenticatedUsers. Multiple domains → multiple `domain:` members, so
+  # IAP admits users from ANY listed domain (IAP IAM is additive). Backward-
+  # compatible: a single domain yields exactly the previous single binding.
+  iap_domains = (var.iap_allowed_domain == "" || var.iap_allowed_domain == "*") ? [] : [
+    for d in split(",", var.iap_allowed_domain) : trimspace(d) if trimspace(d) != ""
+  ]
+  iap_members = length(local.iap_domains) == 0 ? ["allAuthenticatedUsers"] : [for d in local.iap_domains : "domain:${d}"]
 }
 
 # Apex domain: A records pointing at Firebase's stable load-balancer IPs (non-SSO only).
@@ -246,12 +254,12 @@ resource "google_cloud_run_v2_service_iam_member" "iap_frontend_invoker_sa" {
 
 # IAP access grants — who is allowed through IAP
 resource "google_iap_web_cloud_run_service_iam_member" "frontend_access" {
-  count                  = var.has_sso ? 1 : 0
+  for_each               = var.has_sso ? toset(local.iap_members) : toset([])
   project                = data.google_project.project.number
   location               = var.region
   cloud_run_service_name = google_cloud_run_v2_service.frontend_sso[0].name
   role                   = "roles/iap.httpsResourceAccessor"
-  member                 = local.iap_member
+  member                 = each.value
 }
 
 # ── Custom domain mapping for SSO apps ────────────────────────────────────────
