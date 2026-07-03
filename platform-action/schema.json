@@ -125,6 +125,33 @@
         }
       ]
     },
+    "mcp": {
+      "type": "object",
+      "description": "MCP (Model Context Protocol) server. Deployed as a separate Cloud Run service with domain-restricted invoker — no IAP, no allUsers.",
+      "properties": {
+        "language": {
+          "type": "string",
+          "enum": ["python", "go", "node", "rust"],
+          "default": "go"
+        },
+        "dir": {
+          "type": "string",
+          "default": "mcp"
+        },
+        "port": {
+          "type": "integer",
+          "default": 8080
+        },
+        "memory": {
+          "type": "string",
+          "default": "256Mi"
+        },
+        "cpu": {
+          "type": "string",
+          "default": "1"
+        }
+      }
+    },
     "quality": {
       "type": "object",
       "description": "Pulse code quality gates. Enabled by default.",

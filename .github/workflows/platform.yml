@@ -75,6 +75,13 @@ jobs:
       quality_max_duplication: ${{ steps.config.outputs.quality_max_duplication }}
       quality_min_maintainability: ${{ steps.config.outputs.quality_min_maintainability }}
       quality_fail_on_gate: ${{ steps.config.outputs.quality_fail_on_gate }}
+      has_mcp: ${{ steps.config.outputs.has_mcp }}
+      mcp_language: ${{ steps.config.outputs.mcp_language }}
+      mcp_dir: ${{ steps.config.outputs.mcp_dir }}
+      mcp_port: ${{ steps.config.outputs.mcp_port }}
+      mcp_memory: ${{ steps.config.outputs.mcp_memory }}
+      mcp_cpu: ${{ steps.config.outputs.mcp_cpu }}
+      mcp_changed: ${{ steps.changes.outputs.mcp }}
 
     steps:
       - uses: actions/checkout@v4
@@ -101,6 +108,9 @@ jobs:
               - '${{ inputs.config_path }}'
             backend:
               - '${{ steps.config.outputs.backend_dir }}/**'
+              - '${{ inputs.config_path }}'
+            mcp:
+              - '${{ steps.config.outputs.mcp_dir }}/**'
               - '${{ inputs.config_path }}'
 
   # ─────────────────────────────────────────────────────────────────────────────
@@ -176,6 +186,8 @@ jobs:
       bucket_env_json_prod: ${{ steps.tf-out-prod.outputs.bucket_env_json }}
       database_secret_name_dev: ${{ steps.tf-out-dev.outputs.database_secret_name }}
       database_secret_name_prod: ${{ steps.tf-out-prod.outputs.database_secret_name }}
+      mcp_url_dev: ${{ steps.tf-out-dev.outputs.mcp_url }}
+      mcp_url_prod: ${{ steps.tf-out-prod.outputs.mcp_url }}
     steps:
       - name: Checkout StackRamp platform
         uses: actions/checkout@v4
@@ -272,7 +284,8 @@ jobs:
             -var=cloudsql_connection_name=${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }} \
             -var=has_sso=${HAS_SSO} \
             -var=iap_allowed_domain=${{ vars.STACKRAMP_IAP_DOMAIN || '' }} \
-            -var=frontend_sa_email=${{ vars.STACKRAMP_FRONTEND_SA || '' }}"
+            -var=frontend_sa_email=${{ vars.STACKRAMP_FRONTEND_SA || '' }} \
+            -var=has_mcp=${{ needs.parse-config.outputs.has_mcp == 'true' }}"
 
           terraform apply -auto-approve $TF_VARS -var="buckets_json=${BUCKETS_JSON:-[]}"
 
@@ -286,6 +299,7 @@ jobs:
           echo "storage_bucket=$(terraform output -raw storage_bucket 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "bucket_env_json=$(terraform output -raw bucket_env_json 2>/dev/null || echo '{}')" >> $GITHUB_OUTPUT
           echo "database_secret_name=$(terraform output -raw database_secret_name 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          echo "mcp_url=$(terraform output -raw mcp_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
 
       - name: Terraform init (prod)
         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
@@ -320,7 +334,8 @@ jobs:
             -var=cloudsql_connection_name=${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }} \
             -var=has_sso=${HAS_SSO} \
             -var=iap_allowed_domain=${{ vars.STACKRAMP_IAP_DOMAIN || '' }} \
-            -var=frontend_sa_email=${{ vars.STACKRAMP_FRONTEND_SA || '' }}"
+            -var=frontend_sa_email=${{ vars.STACKRAMP_FRONTEND_SA || '' }} \
+            -var=has_mcp=${{ needs.parse-config.outputs.has_mcp == 'true' }}"
 
           terraform apply -auto-approve $TF_VARS -var="buckets_json=${BUCKETS_JSON:-[]}"
 
@@ -335,6 +350,7 @@ jobs:
           echo "storage_bucket=$(terraform output -raw storage_bucket 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "bucket_env_json=$(terraform output -raw bucket_env_json 2>/dev/null || echo '{}')" >> $GITHUB_OUTPUT
           echo "database_secret_name=$(terraform output -raw database_secret_name 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          echo "mcp_url=$(terraform output -raw mcp_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 3. Deploy frontend (if changed)
@@ -400,6 +416,32 @@ jobs:
       sso: ${{ needs.parse-config.outputs.has_sso }}
       frontend_sa: ${{ vars.STACKRAMP_FRONTEND_SA || '' }}
       migrate_command: ${{ needs.parse-config.outputs.migrate_command }}
+      extra_env_vars: ${{ needs.parse-config.outputs.has_mcp == 'true' && format('MCP_URL={0}', needs.provision.outputs.mcp_url_dev) || '' }}
+
+  deploy-mcp:
+    name: MCP server
+    needs: [parse-config, provision]
+    if: |
+      needs.provision.result == 'success' &&
+      needs.parse-config.outputs.has_mcp == 'true' &&
+      (needs.parse-config.outputs.mcp_changed == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request')
+    uses: bobbydeveaux/stackramp/.github/workflows/_mcp.yml@main
+    secrets: inherit
+    with:
+      app_name: ${{ needs.parse-config.outputs.app_name }}
+      mcp_dir: ${{ needs.parse-config.outputs.mcp_dir }}
+      mcp_language: ${{ needs.parse-config.outputs.mcp_language }}
+      mcp_port: ${{ fromJson(needs.parse-config.outputs.mcp_port) }}
+      environment: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || 'dev' }}
+      platform_project: ${{ vars.STACKRAMP_PROJECT }}
+      region: ${{ vars.STACKRAMP_REGION || 'europe-west1' }}
+      wif_provider: ${{ vars.STACKRAMP_WIF_PROVIDER }}
+      service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
+      frontend_url: ${{ needs.provision.outputs.frontend_url_dev }}
+      backend_url: ${{ needs.provision.outputs.backend_url_dev }}
+      memory: ${{ needs.parse-config.outputs.mcp_memory }}
+      cpu: ${{ needs.parse-config.outputs.mcp_cpu }}
+      iap_allowed_domain: ${{ vars.STACKRAMP_IAP_DOMAIN || '' }}
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 4. Deploy to PROD (main branch only, after dev succeeds)
@@ -466,3 +508,32 @@ jobs:
       sso: ${{ needs.parse-config.outputs.has_sso }}
       frontend_sa: ${{ vars.STACKRAMP_FRONTEND_SA || '' }}
       migrate_command: ${{ needs.parse-config.outputs.migrate_command }}
+      extra_env_vars: ${{ needs.parse-config.outputs.has_mcp == 'true' && format('MCP_URL={0}', needs.provision.outputs.mcp_url_prod) || '' }}
+
+  deploy-mcp-prod:
+    name: MCP server → prod
+    needs: [parse-config, provision, deploy-mcp]
+    if: |
+      always() &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      needs.provision.result == 'success' &&
+      needs.parse-config.outputs.has_mcp == 'true' &&
+      (needs.deploy-mcp.result == 'success' || needs.deploy-mcp.result == 'skipped')
+    uses: bobbydeveaux/stackramp/.github/workflows/_mcp.yml@main
+    secrets: inherit
+    with:
+      app_name: ${{ needs.parse-config.outputs.app_name }}
+      mcp_dir: ${{ needs.parse-config.outputs.mcp_dir }}
+      mcp_language: ${{ needs.parse-config.outputs.mcp_language }}
+      mcp_port: ${{ fromJson(needs.parse-config.outputs.mcp_port) }}
+      environment: prod
+      platform_project: ${{ vars.STACKRAMP_PROJECT }}
+      region: ${{ vars.STACKRAMP_REGION || 'europe-west1' }}
+      wif_provider: ${{ vars.STACKRAMP_WIF_PROVIDER }}
+      service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
+      frontend_url: ${{ needs.provision.outputs.frontend_url_prod }}
+      backend_url: ${{ needs.provision.outputs.backend_url_prod }}
+      memory: ${{ needs.parse-config.outputs.mcp_memory }}
+      cpu: ${{ needs.parse-config.outputs.mcp_cpu }}
+      iap_allowed_domain: ${{ vars.STACKRAMP_IAP_DOMAIN || '' }}

@@ -92,6 +92,24 @@ outputs:
   quality_fail_on_gate:
     description: "Whether to fail on quality gate breaches"
     value: ${{ steps.parse.outputs.quality_fail_on_gate }}
+  has_mcp:
+    description: "Whether the app has an MCP server"
+    value: ${{ steps.parse.outputs.has_mcp }}
+  mcp_language:
+    description: "MCP server language (go, python, node, rust)"
+    value: ${{ steps.parse.outputs.mcp_language }}
+  mcp_dir:
+    description: "MCP server directory"
+    value: ${{ steps.parse.outputs.mcp_dir }}
+  mcp_port:
+    description: "MCP server port"
+    value: ${{ steps.parse.outputs.mcp_port }}
+  mcp_memory:
+    description: "MCP server Cloud Run memory"
+    value: ${{ steps.parse.outputs.mcp_memory }}
+  mcp_cpu:
+    description: "MCP server Cloud Run CPU"
+    value: ${{ steps.parse.outputs.mcp_cpu }}
 
 runs:
   using: "composite"
@@ -271,6 +289,23 @@ runs:
         SECURITY_FAIL=$(yq '.security.fail_on_findings' "$CONFIG")
         [ "$SECURITY_FAIL" = "null" ] && SECURITY_FAIL="true"
 
+        # MCP server
+        MCP_LANG=$(yq '.mcp.language // "none"' "$CONFIG")
+        MCP_DIR=$(yq '.mcp.dir // "mcp"' "$CONFIG")
+        MCP_PORT=$(yq '.mcp.port // 8080' "$CONFIG")
+        MCP_MEMORY=$(yq '.mcp.memory // "256Mi"' "$CONFIG")
+        MCP_CPU=$(yq '.mcp.cpu // "1"' "$CONFIG")
+        HAS_MCP="false"
+        [ "$MCP_LANG" != "none" ] && [ "$MCP_LANG" != "null" ] && HAS_MCP="true"
+        # Auto-detect: if mcp block exists at all (any key set), treat as enabled with go default
+        if [ "$HAS_MCP" = "false" ]; then
+          MCP_BLOCK=$(yq '.mcp' "$CONFIG")
+          if [ -n "$MCP_BLOCK" ] && [ "$MCP_BLOCK" != "null" ]; then
+            HAS_MCP="true"
+            MCP_LANG="go"
+          fi
+        fi
+
         # Quality (Pulse) — enabled by default
         QUALITY_ENABLED=$(yq '.quality.enabled' "$CONFIG")
         [ "$QUALITY_ENABLED" = "null" ] && QUALITY_ENABLED="true"
@@ -309,6 +344,12 @@ runs:
         echo "quality_max_duplication=$QUALITY_MAX_DUP" >> $GITHUB_OUTPUT
         echo "quality_min_maintainability=$QUALITY_MIN_MI" >> $GITHUB_OUTPUT
         echo "quality_fail_on_gate=$QUALITY_FAIL" >> $GITHUB_OUTPUT
+        echo "has_mcp=$HAS_MCP" >> $GITHUB_OUTPUT
+        echo "mcp_language=$MCP_LANG" >> $GITHUB_OUTPUT
+        echo "mcp_dir=$MCP_DIR" >> $GITHUB_OUTPUT
+        echo "mcp_port=$MCP_PORT" >> $GITHUB_OUTPUT
+        echo "mcp_memory=$MCP_MEMORY" >> $GITHUB_OUTPUT
+        echo "mcp_cpu=$MCP_CPU" >> $GITHUB_OUTPUT
 
         echo "App: $APP_NAME"
         echo "Frontend: $FRONTEND_FRAMEWORK ($FRONTEND_DIR)"
