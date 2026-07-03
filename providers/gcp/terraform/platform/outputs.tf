@@ -40,3 +40,8 @@ output "cloudsql_connection_name" {
   description = "Cloud SQL connection name passed through for use in Cloud Run deployment"
   value       = var.has_database ? var.cloudsql_connection_name : ""
 }
+
+output "mcp_url" {
+  description = "MCP server Cloud Run URI (empty when mcp: not configured)"
+  value       = var.has_mcp ? google_cloud_run_v2_service.mcp[0].uri : ""
+}

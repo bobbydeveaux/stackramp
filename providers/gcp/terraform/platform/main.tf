@@ -274,6 +274,59 @@ resource "google_iap_web_cloud_run_service_iam_member" "frontend_access" {
   member                 = each.value
 }
 
+# ── MCP Server ───────────────────────────────────────────────────────────────
+# Provisions the Cloud Run service shell for the MCP server when mcp: is set.
+# The actual image is deployed by the workflow (_mcp.yml); Terraform only manages
+# the service definition and IAM. Always no-allow-unauthenticated — the workflow
+# grants domain: invoker after each deploy for the configured IAP domain(s).
+
+resource "google_cloud_run_v2_service" "mcp" {
+  count               = var.has_mcp ? 1 : 0
+  name                = "${var.app_name}-mcp-${var.environment}"
+  location            = var.region
+  project             = var.platform_project
+  deletion_protection = false
+  iap_enabled         = false
+
+  template {
+    containers {
+      image = "us-docker.pkg.dev/cloudrun/container/hello"
+      env {
+        name  = "ENVIRONMENT"
+        value = var.environment
+      }
+      env {
+        name  = "APP_NAME"
+        value = var.app_name
+      }
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      client,
+      client_version,
+      template,
+    ]
+  }
+}
+
+# Grant domain invoker — restricts to toucanberry.com (or whatever STACKRAMP_IAP_DOMAIN is).
+# One binding per domain in a comma-separated iap_allowed_domain list.
+# If no domain is configured, fall back to allAuthenticatedUsers.
+locals {
+  mcp_invoker_members = length(local.iap_members) > 0 ? local.iap_members : ["allAuthenticatedUsers"]
+}
+
+resource "google_cloud_run_v2_service_iam_member" "mcp_invoker" {
+  for_each = var.has_mcp ? toset(local.mcp_invoker_members) : toset([])
+  project  = var.platform_project
+  location = var.region
+  name     = google_cloud_run_v2_service.mcp[0].name
+  role     = "roles/run.invoker"
+  member   = each.value
+}
+
 # ── Custom domain mapping for SSO apps ────────────────────────────────────────
 # Cloud Run handles SSL automatically via the domain mapping.
 # DNS must have a CNAME pointing to ghs.googlehosted.com.
