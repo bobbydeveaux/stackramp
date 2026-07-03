@@ -442,6 +442,7 @@ jobs:
       memory: ${{ needs.parse-config.outputs.mcp_memory }}
       cpu: ${{ needs.parse-config.outputs.mcp_cpu }}
       iap_allowed_domain: ${{ vars.STACKRAMP_IAP_DOMAIN || '' }}
+      vpc_connector: ${{ vars.STACKRAMP_VPC_CONNECTOR || '' }}
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 4. Deploy to PROD (main branch only, after dev succeeds)
