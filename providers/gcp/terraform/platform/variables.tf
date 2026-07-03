@@ -96,3 +96,9 @@ variable "iap_allowed_domain" {
   type        = string
   default     = ""
 }
+
+variable "has_mcp" {
+  description = "Whether to provision a Cloud Run service for the MCP server. Always deployed with no-allow-unauthenticated and a domain: invoker (never allUsers)."
+  type        = bool
+  default     = false
+}
