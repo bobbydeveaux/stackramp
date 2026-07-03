@@ -197,14 +197,15 @@ resource "google_cloud_run_v2_service" "app" {
   }
 }
 
-# Allow unauthenticated access (non-SSO apps only)
+# Allow access (non-SSO apps only). Org policy blocks allUsers, so if an
+# iap_allowed_domain is set we restrict to that domain instead of going fully public.
 resource "google_cloud_run_v2_service_iam_member" "public" {
   count    = var.has_backend && !var.has_sso ? 1 : 0
   project  = var.platform_project
   location = var.region
   name     = google_cloud_run_v2_service.app[0].name
   role     = "roles/run.invoker"
-  member   = "allUsers"
+  member   = var.iap_allowed_domain != "" ? "domain:${var.iap_allowed_domain}" : "allUsers"
 }
 
 # Grant default compute SA invoker on backend — used by the Go proxy
