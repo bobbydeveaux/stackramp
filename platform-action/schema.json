@@ -51,6 +51,11 @@
         "cpu": {
           "type": "string",
           "default": "1"
+        },
+        "public": {
+          "type": "boolean",
+          "default": false,
+          "description": "Deploy with --allow-unauthenticated (allUsers invoker) so MCP OAuth discovery is reachable by clients like Claude Code. Requires an org policy that permits allUsers; auth is then enforced in-app (bearer tokens via the MCP OAuth flow)."
         }
       }
     },

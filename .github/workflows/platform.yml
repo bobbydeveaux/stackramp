@@ -81,6 +81,7 @@ jobs:
       mcp_port: ${{ steps.config.outputs.mcp_port }}
       mcp_memory: ${{ steps.config.outputs.mcp_memory }}
       mcp_cpu: ${{ steps.config.outputs.mcp_cpu }}
+      mcp_public: ${{ steps.config.outputs.mcp_public }}
       mcp_changed: ${{ steps.changes.outputs.mcp }}
 
     steps:
@@ -443,6 +444,7 @@ jobs:
       cpu: ${{ needs.parse-config.outputs.mcp_cpu }}
       iap_allowed_domain: ${{ vars.STACKRAMP_IAP_DOMAIN || '' }}
       vpc_connector: ${{ vars.STACKRAMP_VPC_CONNECTOR || '' }}
+      public: ${{ needs.parse-config.outputs.mcp_public }}
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 4. Deploy to PROD (main branch only, after dev succeeds)
@@ -538,3 +540,5 @@ jobs:
       memory: ${{ needs.parse-config.outputs.mcp_memory }}
       cpu: ${{ needs.parse-config.outputs.mcp_cpu }}
       iap_allowed_domain: ${{ vars.STACKRAMP_IAP_DOMAIN || '' }}
+      vpc_connector: ${{ vars.STACKRAMP_VPC_CONNECTOR || '' }}
+      public: ${{ needs.parse-config.outputs.mcp_public }}

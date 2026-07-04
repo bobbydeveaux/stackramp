@@ -110,6 +110,9 @@ outputs:
   mcp_cpu:
     description: "MCP server Cloud Run CPU"
     value: ${{ steps.parse.outputs.mcp_cpu }}
+  mcp_public:
+    description: "Whether the MCP service allows unauthenticated invocation (auth enforced in-app)"
+    value: ${{ steps.parse.outputs.mcp_public }}
 
 runs:
   using: "composite"
@@ -295,6 +298,7 @@ runs:
         MCP_PORT=$(yq '.mcp.port // 8080' "$CONFIG")
         MCP_MEMORY=$(yq '.mcp.memory // "256Mi"' "$CONFIG")
         MCP_CPU=$(yq '.mcp.cpu // "1"' "$CONFIG")
+        MCP_PUBLIC=$(yq '.mcp.public // false' "$CONFIG")
         HAS_MCP="false"
         [ "$MCP_LANG" != "none" ] && [ "$MCP_LANG" != "null" ] && HAS_MCP="true"
         # Auto-detect: if mcp block exists at all (any key set), treat as enabled with go default
@@ -350,6 +354,7 @@ runs:
         echo "mcp_port=$MCP_PORT" >> $GITHUB_OUTPUT
         echo "mcp_memory=$MCP_MEMORY" >> $GITHUB_OUTPUT
         echo "mcp_cpu=$MCP_CPU" >> $GITHUB_OUTPUT
+        echo "mcp_public=$MCP_PUBLIC" >> $GITHUB_OUTPUT
 
         echo "App: $APP_NAME"
         echo "Frontend: $FRONTEND_FRAMEWORK ($FRONTEND_DIR)"

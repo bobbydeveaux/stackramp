@@ -60,6 +60,11 @@ on:
         required: false
         default: ""
         description: "Serverless VPC Access Connector. Required to reach an ingress=internal backend — egress is set to all-traffic so backend calls originate inside the VPC (same as the SSO frontend proxy)."
+      public:
+        type: string
+        required: false
+        default: "false"
+        description: "When true, deploy --allow-unauthenticated (allUsers) so MCP OAuth discovery works for clients like Claude Code. Requires an org policy permitting allUsers; auth is enforced in-app."
       extra_env_vars:
         type: string
         required: false
@@ -154,16 +159,21 @@ jobs:
             --timeout=300
             --cpu-throttling
             --project="${{ inputs.platform_project }}"
-            --no-allow-unauthenticated
             --ingress=all
           )
+          if [ "${{ inputs.public }}" = "true" ]; then
+            # Public MCP: reachable by OAuth clients (Claude Code); auth enforced in-app.
+            DEPLOY_FLAGS+=(--allow-unauthenticated)
+          else
+            DEPLOY_FLAGS+=(--no-allow-unauthenticated)
+          fi
           [ -n "$SECRET_REFS" ] && DEPLOY_FLAGS+=(--set-secrets="$SECRET_REFS")
           [ -n "${{ inputs.vpc_connector }}" ] && DEPLOY_FLAGS+=(--vpc-connector="${{ inputs.vpc_connector }}" --vpc-egress=all-traffic)
 
           gcloud run deploy "$SERVICE_NAME" "${DEPLOY_FLAGS[@]}"
 
       - name: Grant domain invoker on MCP service
-        if: inputs.iap_allowed_domain != ''
+        if: inputs.iap_allowed_domain != '' && inputs.public != 'true'
         run: |
           SERVICE_NAME="${{ inputs.app_name }}-mcp-${{ inputs.environment }}"
           IFS=',' read -ra DOMAINS <<< "${{ inputs.iap_allowed_domain }}"
