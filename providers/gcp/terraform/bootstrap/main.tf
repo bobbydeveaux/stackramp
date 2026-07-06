@@ -152,16 +152,40 @@ resource "google_service_account_iam_member" "cicd_can_act_as_frontend" {
 # (`mcp.allowed_service_accounts`), reviewable in git; adding a consumer to a
 # new app is a config change, never a new credential.
 #
-# Keys are deliberately NOT created here: run
+# Keys: opt-in via machine_consumer_keys. When true, a JSON key is created and
+# stored in Secret Manager (machine-consumer-<name>-key) — note the key also
+# lands in Terraform state (see the variable description for the trade-off).
+# When false, mint manually:
 #   gcloud iam service-accounts keys create <consumer>.json \
 #     --iam-account=<consumer>@<project>.iam.gserviceaccount.com
-# once per consumer and store it in that system's secret store.
 
 resource "google_service_account" "machine_consumer" {
   for_each     = toset(var.machine_consumers)
   account_id   = each.value
   display_name = "Machine consumer: ${each.value}"
-  description  = "Keyless identity for ${each.value} to call apps' MCP services. No project roles; apps allow-list this SA via mcp.allowed_service_accounts."
+  description  = "Identity for ${each.value} to call apps' MCP services. No project roles; apps allow-list this SA via mcp.allowed_service_accounts."
+}
+
+resource "google_service_account_key" "machine_consumer" {
+  for_each           = var.machine_consumer_keys ? toset(var.machine_consumers) : []
+  service_account_id = google_service_account.machine_consumer[each.value].name
+}
+
+resource "google_secret_manager_secret" "machine_consumer_key" {
+  for_each  = var.machine_consumer_keys ? toset(var.machine_consumers) : []
+  secret_id = "machine-consumer-${each.value}-key"
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_secret_manager_secret_version" "machine_consumer_key" {
+  for_each    = var.machine_consumer_keys ? toset(var.machine_consumers) : []
+  secret      = google_secret_manager_secret.machine_consumer_key[each.value].id
+  secret_data = base64decode(google_service_account_key.machine_consumer[each.value].private_key)
 }
 
 # ── Workload Identity Federation ──────────────────────────────────────────────

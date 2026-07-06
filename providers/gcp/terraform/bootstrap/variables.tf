@@ -87,7 +87,7 @@ variable "iap_allowed_domain" {
 }
 
 variable "machine_consumers" {
-  description = "Machine consumer systems (e.g. [\"agentops\"]) that call apps' MCP services with a service-account identity. Each entry becomes a keyless SA with NO project roles — it exists purely as a verifiable identity. Apps grant access per-app via `mcp.allowed_service_accounts` in stackramp.yaml; the operator mints a key manually with `gcloud iam service-accounts keys create` (outside Terraform, so it never lands in state)."
+  description = "Machine consumer systems (e.g. [\"agentops\"]) that call apps' MCP services with a service-account identity. Each entry becomes an SA with NO project roles — it exists purely as a verifiable identity. Apps grant access per-app via `mcp.allowed_service_accounts` in stackramp.yaml."
   type        = list(string)
   default     = []
 
@@ -95,5 +95,11 @@ variable "machine_consumers" {
     condition     = alltrue([for c in var.machine_consumers : can(regex("^[a-z]([a-z0-9-]{4,28})[a-z0-9]$", c))])
     error_message = "Each machine consumer must be a valid SA account_id: 6-30 chars, lowercase letters/digits/hyphens, starting with a letter."
   }
+}
+
+variable "machine_consumer_keys" {
+  description = "Also create a JSON key per machine consumer and store it in Secret Manager (machine-consumer-<name>-key). CAVEAT: the private key is persisted in Terraform state — acceptable for a single-operator platform with a locked-down state bucket; set false and mint keys manually with gcloud if that's not you. Fetch: gcloud secrets versions access latest --secret=machine-consumer-<name>-key"
+  type        = bool
+  default     = false
 }
 
