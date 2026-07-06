@@ -214,6 +214,18 @@ if ns:
     print('   Nameservers to set at your domain registrar:')
     for n in ns:
         print(f'      {n}')
+mc = data.get('machine_consumer_emails', {}).get('value', {})
+mck = data.get('machine_consumer_key_secrets', {}).get('value', {})
+if mc:
+    print()
+    print('   Machine consumer SAs — allow-list per-app via mcp.allowed_service_accounts:')
+    for name, email in mc.items():
+        print(f'      {name}: {email}')
+        if name in mck:
+            print(f'         key:  gcloud secrets versions access latest --secret={mck[name]} > {name}-sa.json')
+        else:
+            print(f'         key:  gcloud iam service-accounts keys create {name}-sa.json --iam-account={email}')
+        print(f'         then: kubectl create secret generic {name}-gcp-sa --from-file=key.json={name}-sa.json && rm {name}-sa.json')
 "
 echo
 echo "   2. Add stackramp.yaml + .github/workflows/deploy.yml to your app repo"
