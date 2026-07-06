@@ -154,6 +154,16 @@
         "cpu": {
           "type": "string",
           "default": "1"
+        },
+        "public": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow unauthenticated Cloud Run invocation (required for MCP OAuth discovery); auth is enforced in-app on /v1/mcp."
+        },
+        "allowed_service_accounts": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Machine consumer SA emails allowed to call this MCP service with Google-signed ID tokens (e.g. agentops@project.iam.gserviceaccount.com — provisioned by the bootstrap's machine_consumers). Injected into the MCP service as MCP_SERVICE_ACCOUNTS, semicolon-joined."
         }
       }
     },

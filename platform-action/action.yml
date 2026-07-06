@@ -113,6 +113,9 @@ outputs:
   mcp_public:
     description: "Whether the MCP service allows unauthenticated invocation (auth enforced in-app)"
     value: ${{ steps.parse.outputs.mcp_public }}
+  mcp_service_accounts:
+    description: "Semicolon-joined SA emails allowed to call the MCP service with Google-signed ID tokens (from mcp.allowed_service_accounts)"
+    value: ${{ steps.parse.outputs.mcp_service_accounts }}
 
 runs:
   using: "composite"
@@ -299,6 +302,10 @@ runs:
         MCP_MEMORY=$(yq '.mcp.memory // "256Mi"' "$CONFIG")
         MCP_CPU=$(yq '.mcp.cpu // "1"' "$CONFIG")
         MCP_PUBLIC=$(yq '.mcp.public // false' "$CONFIG")
+        # Machine consumers: SA emails allow-listed to call this MCP with
+        # Google-signed ID tokens. Joined with ';' because the value rides
+        # inside a comma-separated --set-env-vars flag downstream.
+        MCP_SERVICE_ACCOUNTS=$(yq '(.mcp.allowed_service_accounts // []) | join(";")' "$CONFIG")
         HAS_MCP="false"
         [ "$MCP_LANG" != "none" ] && [ "$MCP_LANG" != "null" ] && HAS_MCP="true"
         # Auto-detect: if mcp block exists at all (any key set), treat as enabled with go default
@@ -355,6 +362,7 @@ runs:
         echo "mcp_memory=$MCP_MEMORY" >> $GITHUB_OUTPUT
         echo "mcp_cpu=$MCP_CPU" >> $GITHUB_OUTPUT
         echo "mcp_public=$MCP_PUBLIC" >> $GITHUB_OUTPUT
+        echo "mcp_service_accounts=$MCP_SERVICE_ACCOUNTS" >> $GITHUB_OUTPUT
 
         echo "App: $APP_NAME"
         echo "Frontend: $FRONTEND_FRAMEWORK ($FRONTEND_DIR)"
