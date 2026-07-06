@@ -183,9 +183,14 @@ resource "google_secret_manager_secret" "machine_consumer_key" {
 }
 
 resource "google_secret_manager_secret_version" "machine_consumer_key" {
-  for_each    = var.machine_consumer_keys ? toset(var.machine_consumers) : []
-  secret      = google_secret_manager_secret.machine_consumer_key[each.value].id
-  secret_data = base64decode(google_service_account_key.machine_consumer[each.value].private_key)
+  for_each = var.machine_consumer_keys ? toset(var.machine_consumers) : []
+  secret   = google_secret_manager_secret.machine_consumer_key[each.value].id
+  # Write-only argument (TF >= 1.11): the payload is sent to Secret Manager but
+  # this copy is NEVER persisted in state. The key still exists in state once,
+  # on google_service_account_key.private_key (schema-sensitive, redacted from
+  # CLI output) — that one is unavoidable with SA keys.
+  secret_data_wo         = base64decode(google_service_account_key.machine_consumer[each.value].private_key)
+  secret_data_wo_version = 1
 }
 
 # ── Workload Identity Federation ──────────────────────────────────────────────
