@@ -82,6 +82,7 @@ jobs:
       mcp_memory: ${{ steps.config.outputs.mcp_memory }}
       mcp_cpu: ${{ steps.config.outputs.mcp_cpu }}
       mcp_public: ${{ steps.config.outputs.mcp_public }}
+      mcp_service_accounts: ${{ steps.config.outputs.mcp_service_accounts }}
       mcp_changed: ${{ steps.changes.outputs.mcp }}
 
     steps:
@@ -445,6 +446,7 @@ jobs:
       iap_allowed_domain: ${{ vars.STACKRAMP_IAP_DOMAIN || '' }}
       vpc_connector: ${{ vars.STACKRAMP_VPC_CONNECTOR || '' }}
       public: ${{ needs.parse-config.outputs.mcp_public }}
+      extra_env_vars: ${{ needs.parse-config.outputs.mcp_service_accounts != '' && format('MCP_SERVICE_ACCOUNTS={0}', needs.parse-config.outputs.mcp_service_accounts) || '' }}
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 4. Deploy to PROD (main branch only, after dev succeeds)
@@ -542,3 +544,4 @@ jobs:
       iap_allowed_domain: ${{ vars.STACKRAMP_IAP_DOMAIN || '' }}
       vpc_connector: ${{ vars.STACKRAMP_VPC_CONNECTOR || '' }}
       public: ${{ needs.parse-config.outputs.mcp_public }}
+      extra_env_vars: ${{ needs.parse-config.outputs.mcp_service_accounts != '' && format('MCP_SERVICE_ACCOUNTS={0}', needs.parse-config.outputs.mcp_service_accounts) || '' }}

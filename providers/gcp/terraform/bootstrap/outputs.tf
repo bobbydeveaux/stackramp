@@ -63,6 +63,16 @@ output "iap_enabled" {
   value       = var.iap_allowed_domain != ""
 }
 
+output "machine_consumer_emails" {
+  description = "SA emails for machine consumers. Use these in apps' `mcp.allowed_service_accounts` (stackramp.yaml)."
+  value       = { for name, sa in google_service_account.machine_consumer : name => sa.email }
+}
+
+output "machine_consumer_key_secrets" {
+  description = "Secret Manager secret IDs holding each consumer's JSON key (only when machine_consumer_keys = true). Fetch: gcloud secrets versions access latest --secret=<id>"
+  value       = { for name, s in google_secret_manager_secret.machine_consumer_key : name => s.secret_id }
+}
+
 output "github_variables_summary" {
   description = "Copy these values to your GitHub org/repo Variables"
   value       = <<-EOT
