@@ -144,6 +144,26 @@ resource "google_service_account_iam_member" "cicd_can_act_as_frontend" {
   member             = "serviceAccount:${google_service_account.platform_cicd.email}"
 }
 
+# ── Machine Consumer Service Accounts ─────────────────────────────────────────
+# One identity per consumer SYSTEM (not per app). These SAs carry NO project
+# roles — they exist purely so external workloads (e.g. an AgentOps cluster)
+# can mint Google-signed ID tokens that apps' MCP services verify statelessly.
+# The trust decision lives in each app's stackramp.yaml
+# (`mcp.allowed_service_accounts`), reviewable in git; adding a consumer to a
+# new app is a config change, never a new credential.
+#
+# Keys are deliberately NOT created here: run
+#   gcloud iam service-accounts keys create <consumer>.json \
+#     --iam-account=<consumer>@<project>.iam.gserviceaccount.com
+# once per consumer and store it in that system's secret store.
+
+resource "google_service_account" "machine_consumer" {
+  for_each     = toset(var.machine_consumers)
+  account_id   = each.value
+  display_name = "Machine consumer: ${each.value}"
+  description  = "Keyless identity for ${each.value} to call apps' MCP services. No project roles; apps allow-list this SA via mcp.allowed_service_accounts."
+}
+
 # ── Workload Identity Federation ──────────────────────────────────────────────
 # ONE pool for the whole platform — all repos in the org can use it
 

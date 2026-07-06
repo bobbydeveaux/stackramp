@@ -86,3 +86,14 @@ variable "iap_allowed_domain" {
   default     = ""
 }
 
+variable "machine_consumers" {
+  description = "Machine consumer systems (e.g. [\"agentops\"]) that call apps' MCP services with a service-account identity. Each entry becomes a keyless SA with NO project roles — it exists purely as a verifiable identity. Apps grant access per-app via `mcp.allowed_service_accounts` in stackramp.yaml; the operator mints a key manually with `gcloud iam service-accounts keys create` (outside Terraform, so it never lands in state)."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for c in var.machine_consumers : can(regex("^[a-z]([a-z0-9-]{4,28})[a-z0-9]$", c))])
+    error_message = "Each machine consumer must be a valid SA account_id: 6-30 chars, lowercase letters/digits/hyphens, starting with a letter."
+  }
+}
+

@@ -63,6 +63,11 @@ output "iap_enabled" {
   value       = var.iap_allowed_domain != ""
 }
 
+output "machine_consumer_emails" {
+  description = "SA emails for machine consumers. Use these in apps' `mcp.allowed_service_accounts` (stackramp.yaml). Mint each key manually: gcloud iam service-accounts keys create <name>.json --iam-account=<email>"
+  value       = { for name, sa in google_service_account.machine_consumer : name => sa.email }
+}
+
 output "github_variables_summary" {
   description = "Copy these values to your GitHub org/repo Variables"
   value       = <<-EOT
