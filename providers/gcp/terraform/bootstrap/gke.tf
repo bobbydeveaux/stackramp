@@ -173,7 +173,7 @@ resource "helm_release" "external_secrets" {
 resource "kubectl_manifest" "cluster_secret_store" {
   count = var.enable_gke ? 1 : 0
   yaml_body = yamlencode({
-    apiVersion = "external-secrets.io/v1beta1"
+    apiVersion = "external-secrets.io/v1"
     kind       = "ClusterSecretStore"
     metadata   = { name = "gcp-secret-manager" }
     spec = {

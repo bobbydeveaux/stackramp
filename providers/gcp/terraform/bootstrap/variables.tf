@@ -124,7 +124,7 @@ variable "gke_release_channel" {
 variable "eso_chart_version" {
   description = "External Secrets Operator Helm chart version (charts.external-secrets.io)."
   type        = string
-  default     = "0.10.4"
+  default     = "2.7.0"
 }
 
 variable "machine_consumer_keys" {
