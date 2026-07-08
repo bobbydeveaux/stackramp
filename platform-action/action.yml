@@ -116,6 +116,24 @@ outputs:
   mcp_service_accounts:
     description: "Semicolon-joined SA emails allowed to call the MCP service with Google-signed ID tokens (from mcp.allowed_service_accounts)"
     value: ${{ steps.parse.outputs.mcp_service_accounts }}
+  has_kubernetes:
+    description: "Whether the app declares a kubernetes: block (Helm release on the shared GKE cluster)"
+    value: ${{ steps.parse.outputs.has_kubernetes }}
+  kubernetes_chart:
+    description: "Path to the app's Helm chart"
+    value: ${{ steps.parse.outputs.kubernetes_chart }}
+  kubernetes_namespace:
+    description: "Namespace the Helm release is installed into"
+    value: ${{ steps.parse.outputs.kubernetes_namespace }}
+  kubernetes_domain:
+    description: "Ingress host for the k8s app (empty => no ingress)"
+    value: ${{ steps.parse.outputs.kubernetes_domain }}
+  kubernetes_values:
+    description: "Inline Helm value overrides (compact JSON)"
+    value: ${{ steps.parse.outputs.kubernetes_values }}
+  kubernetes_images:
+    description: "Images to build+push before helm install (compact JSON array)"
+    value: ${{ steps.parse.outputs.kubernetes_images }}
 
 runs:
   using: "composite"
@@ -317,6 +335,21 @@ runs:
           fi
         fi
 
+        # Kubernetes / Helm — apps that need a real cluster (dispatch k8s Jobs,
+        # run a Helm chart) declare a `kubernetes:` block. Helm-installed into a
+        # per-app namespace on the shared GKE cluster (see _kubernetes.yml).
+        K8S_CHART=$(yq '.kubernetes.chart // ""' "$CONFIG")
+        K8S_NAMESPACE=$(yq '.kubernetes.namespace // "'"$APP_NAME"'"' "$CONFIG")
+        K8S_DOMAIN=$(yq '.kubernetes.domain // ""' "$CONFIG")
+        K8S_VALUES=$(yq -o=json -I=0 '.kubernetes.values // {}' "$CONFIG")
+        K8S_IMAGES=$(yq -o=json -I=0 '[.kubernetes.images[]? | {"name": .name, "dockerfile": .dockerfile, "context": (.context // ".")}]' "$CONFIG")
+        HAS_K8S="false"
+        K8S_BLOCK=$(yq '.kubernetes' "$CONFIG")
+        if [ -n "$K8S_BLOCK" ] && [ "$K8S_BLOCK" \!= "null" ]; then
+          HAS_K8S="true"
+          [ -z "$K8S_CHART" ] && K8S_CHART="deploy/helm/${APP_NAME}"
+        fi
+
         # Quality (Pulse) — enabled by default
         QUALITY_ENABLED=$(yq '.quality.enabled' "$CONFIG")
         [ "$QUALITY_ENABLED" = "null" ] && QUALITY_ENABLED="true"
@@ -358,6 +391,12 @@ runs:
         echo "has_mcp=$HAS_MCP" >> $GITHUB_OUTPUT
         echo "mcp_language=$MCP_LANG" >> $GITHUB_OUTPUT
         echo "mcp_dir=$MCP_DIR" >> $GITHUB_OUTPUT
+        echo "has_kubernetes=$HAS_K8S" >> $GITHUB_OUTPUT
+        echo "kubernetes_chart=$K8S_CHART" >> $GITHUB_OUTPUT
+        echo "kubernetes_namespace=$K8S_NAMESPACE" >> $GITHUB_OUTPUT
+        echo "kubernetes_domain=$K8S_DOMAIN" >> $GITHUB_OUTPUT
+        echo "kubernetes_values=$K8S_VALUES" >> $GITHUB_OUTPUT
+        echo "kubernetes_images=$K8S_IMAGES" >> $GITHUB_OUTPUT
         echo "mcp_port=$MCP_PORT" >> $GITHUB_OUTPUT
         echo "mcp_memory=$MCP_MEMORY" >> $GITHUB_OUTPUT
         echo "mcp_cpu=$MCP_CPU" >> $GITHUB_OUTPUT
