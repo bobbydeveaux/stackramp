@@ -118,6 +118,11 @@ resource "google_project_iam_member" "platform_roles" {
     "roles/compute.networkAdmin",
     "roles/vpcaccess.admin",
     "roles/iap.admin",
+    # GKE: get-credentials + full access to Kubernetes API objects (deploy Helm
+    # workloads into app namespaces). Deliberately container.developer, NOT
+    # container.admin — the deploy SA manages workloads, it never creates or
+    # deletes clusters. Harmless on projects with no cluster (enable_gke=false).
+    "roles/container.developer",
   ])
 
   project = local.platform_project
