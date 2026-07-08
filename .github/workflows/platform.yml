@@ -198,6 +198,12 @@ jobs:
       bucket_env_json_prod: ${{ steps.tf-out-prod.outputs.bucket_env_json }}
       database_secret_name_dev: ${{ steps.tf-out-dev.outputs.database_secret_name }}
       database_secret_name_prod: ${{ steps.tf-out-prod.outputs.database_secret_name }}
+      k8s_cloudsql_sa_email_dev: ${{ steps.tf-out-dev.outputs.k8s_cloudsql_sa_email }}
+      k8s_cloudsql_sa_email_prod: ${{ steps.tf-out-prod.outputs.k8s_cloudsql_sa_email }}
+      k8s_cloudsql_ksa_dev: ${{ steps.tf-out-dev.outputs.k8s_cloudsql_ksa }}
+      k8s_cloudsql_ksa_prod: ${{ steps.tf-out-prod.outputs.k8s_cloudsql_ksa }}
+      k8s_secret_prefix_dev: ${{ steps.tf-out-dev.outputs.k8s_secret_prefix }}
+      k8s_secret_prefix_prod: ${{ steps.tf-out-prod.outputs.k8s_secret_prefix }}
       mcp_url_dev: ${{ steps.tf-out-dev.outputs.mcp_url }}
       mcp_url_prod: ${{ steps.tf-out-prod.outputs.mcp_url }}
     steps:
@@ -297,7 +303,9 @@ jobs:
             -var=has_sso=${HAS_SSO} \
             -var=iap_allowed_domain=${{ vars.STACKRAMP_IAP_DOMAIN || '' }} \
             -var=frontend_sa_email=${{ vars.STACKRAMP_FRONTEND_SA || '' }} \
-            -var=has_mcp=${{ needs.parse-config.outputs.has_mcp == 'true' }}"
+            -var=has_mcp=${{ needs.parse-config.outputs.has_mcp == 'true' }} \
+            -var=has_kubernetes=${{ needs.parse-config.outputs.has_kubernetes == 'true' }} \
+            -var=kubernetes_namespace=${{ needs.parse-config.outputs.kubernetes_namespace }}"
 
           terraform apply -auto-approve $TF_VARS -var="buckets_json=${BUCKETS_JSON:-[]}"
 
@@ -311,6 +319,9 @@ jobs:
           echo "storage_bucket=$(terraform output -raw storage_bucket 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "bucket_env_json=$(terraform output -raw bucket_env_json 2>/dev/null || echo '{}')" >> $GITHUB_OUTPUT
           echo "database_secret_name=$(terraform output -raw database_secret_name 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          echo "k8s_cloudsql_sa_email=$(terraform output -raw k8s_cloudsql_sa_email 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          echo "k8s_cloudsql_ksa=$(terraform output -raw k8s_cloudsql_ksa 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          echo "k8s_secret_prefix=$(terraform output -raw k8s_secret_prefix 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "mcp_url=$(terraform output -raw mcp_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
 
       - name: Terraform init (prod)
@@ -347,7 +358,9 @@ jobs:
             -var=has_sso=${HAS_SSO} \
             -var=iap_allowed_domain=${{ vars.STACKRAMP_IAP_DOMAIN || '' }} \
             -var=frontend_sa_email=${{ vars.STACKRAMP_FRONTEND_SA || '' }} \
-            -var=has_mcp=${{ needs.parse-config.outputs.has_mcp == 'true' }}"
+            -var=has_mcp=${{ needs.parse-config.outputs.has_mcp == 'true' }} \
+            -var=has_kubernetes=${{ needs.parse-config.outputs.has_kubernetes == 'true' }} \
+            -var=kubernetes_namespace=${{ needs.parse-config.outputs.kubernetes_namespace }}"
 
           terraform apply -auto-approve $TF_VARS -var="buckets_json=${BUCKETS_JSON:-[]}"
 
@@ -362,6 +375,9 @@ jobs:
           echo "storage_bucket=$(terraform output -raw storage_bucket 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "bucket_env_json=$(terraform output -raw bucket_env_json 2>/dev/null || echo '{}')" >> $GITHUB_OUTPUT
           echo "database_secret_name=$(terraform output -raw database_secret_name 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          echo "k8s_cloudsql_sa_email=$(terraform output -raw k8s_cloudsql_sa_email 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          echo "k8s_cloudsql_ksa=$(terraform output -raw k8s_cloudsql_ksa 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          echo "k8s_secret_prefix=$(terraform output -raw k8s_secret_prefix 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "mcp_url=$(terraform output -raw mcp_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
 
   # ─────────────────────────────────────────────────────────────────────────────
@@ -481,6 +497,9 @@ jobs:
       gke_location: ${{ vars.STACKRAMP_GKE_LOCATION }}
       wif_provider: ${{ vars.STACKRAMP_WIF_PROVIDER }}
       service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
+      cloudsql_sa_email: ${{ needs.provision.outputs.k8s_cloudsql_sa_email_dev }}
+      cloudsql_ksa: ${{ needs.provision.outputs.k8s_cloudsql_ksa_dev }}
+      secret_prefix: ${{ needs.provision.outputs.k8s_secret_prefix_dev }}
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 4. Deploy to PROD (main branch only, after dev succeeds)
@@ -604,3 +623,6 @@ jobs:
       gke_location: ${{ vars.STACKRAMP_GKE_LOCATION }}
       wif_provider: ${{ vars.STACKRAMP_WIF_PROVIDER }}
       service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
+      cloudsql_sa_email: ${{ needs.provision.outputs.k8s_cloudsql_sa_email_prod }}
+      cloudsql_ksa: ${{ needs.provision.outputs.k8s_cloudsql_ksa_prod }}
+      secret_prefix: ${{ needs.provision.outputs.k8s_secret_prefix_prod }}
