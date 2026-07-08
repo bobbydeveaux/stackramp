@@ -40,10 +40,13 @@ resource "google_compute_subnetwork" "gke" {
 }
 
 resource "google_container_cluster" "platform" {
-  count    = var.enable_gke ? 1 : 0
-  name     = "stackramp-${var.environment}"
-  project  = local.platform_project
-  location = var.region
+  count   = var.enable_gke ? 1 : 0
+  name    = "stackramp-${var.environment}"
+  project = local.platform_project
+  # ZONAL (a single zone), not regional: a regional cluster replicates the node
+  # pool across 3 zones, so node_count=1 would mean 3 nodes — 3× cost AND it
+  # breaks the shared /memory hostPath (node-local). Zonal = genuinely one node.
+  location = var.gke_zone
 
   # Manage the node pool separately (below) — the default pool is removed.
   remove_default_node_pool = true
@@ -77,7 +80,7 @@ resource "google_container_node_pool" "primary" {
   count      = var.enable_gke ? 1 : 0
   name       = "primary"
   project    = local.platform_project
-  location   = var.region
+  location   = var.gke_zone
   cluster    = google_container_cluster.platform[0].name
   node_count = var.gke_node_count
 

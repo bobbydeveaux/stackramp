@@ -121,6 +121,17 @@ variable "gke_release_channel" {
   default     = "REGULAR"
 }
 
+variable "gke_zone" {
+  description = "Zone for the GKE cluster (e.g. europe-west1-b). MUST be a single zone, not a region — a zonal cluster gives exactly gke_node_count nodes, keeping the shared /memory hostPath (node-local) working. A regional value would triple the nodes and break it."
+  type        = string
+  default     = "europe-west1-b"
+
+  validation {
+    condition     = can(regex("-[a-z]$", var.gke_zone))
+    error_message = "gke_zone must be a zone (ending in a letter, e.g. europe-west1-b), not a region."
+  }
+}
+
 variable "eso_chart_version" {
   description = "External Secrets Operator Helm chart version (charts.external-secrets.io)."
   type        = string
