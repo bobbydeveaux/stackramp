@@ -56,6 +56,21 @@ on:
       service_account:
         type: string
         required: true
+      cloudsql_sa_email:
+        type: string
+        required: false
+        default: ""
+        description: "Cloud SQL client GSA the proxy assumes via Workload Identity (platform terraform output k8s_cloudsql_sa_email)."
+      cloudsql_ksa:
+        type: string
+        required: false
+        default: ""
+        description: "Namespace ServiceAccount the proxy runs as, WI-bound to cloudsql_sa_email."
+      secret_prefix:
+        type: string
+        required: false
+        default: ""
+        description: "Secret Manager name prefix (<app>-<env>) the chart's ExternalSecret references."
     outputs:
       release:
         description: "Installed Helm release name"
@@ -130,6 +145,11 @@ jobs:
             --wait --timeout 10m
           )
           [ -n "${{ inputs.domain }}" ] && HELM_ARGS+=(--set ingress.enabled=true --set ingress.domain="${{ inputs.domain }}")
+          # Identifiers the platform terraform (A3) owns — injected here so the
+          # chart never hardcodes them.
+          [ -n "${{ inputs.cloudsql_sa_email }}" ] && HELM_ARGS+=(--set cloudsqlProxy.serviceAccount.gcpServiceAccount="${{ inputs.cloudsql_sa_email }}")
+          [ -n "${{ inputs.cloudsql_ksa }}" ] && HELM_ARGS+=(--set cloudsqlProxy.serviceAccount.name="${{ inputs.cloudsql_ksa }}")
+          [ -n "${{ inputs.secret_prefix }}" ] && HELM_ARGS+=(--set externalSecrets.remotePrefix="${{ inputs.secret_prefix }}")
 
           helm "${HELM_ARGS[@]}"
           echo "release=$RELEASE" >> $GITHUB_OUTPUT
