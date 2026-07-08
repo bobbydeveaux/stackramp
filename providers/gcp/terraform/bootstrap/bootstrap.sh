@@ -208,6 +208,10 @@ if cloudsql:
 iap_domain = '${IAP_DOMAIN}'
 if iap_domain:
     print(f'      STACKRAMP_IAP_DOMAIN           = {iap_domain}')
+gke = data.get('gke_cluster_name', {}).get('value', '')
+if gke:
+    print(f'      STACKRAMP_GKE_CLUSTER          = {gke}')
+    print(f'      STACKRAMP_GKE_LOCATION         = {data.get(\"gke_location\", {}).get(\"value\", \"\")}')
 ns = data.get('dns_zone_nameservers', {}).get('value', [])
 if ns:
     print()

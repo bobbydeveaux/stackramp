@@ -97,6 +97,36 @@ variable "machine_consumers" {
   }
 }
 
+variable "enable_gke" {
+  description = "Provision the shared GKE cluster + External Secrets Operator. Apps declaring a `kubernetes:` block in stackramp.yaml are Helm-installed into their own namespace on this cluster. Off by default — most apps use Cloud Run."
+  type        = bool
+  default     = false
+}
+
+variable "gke_machine_type" {
+  description = "Node machine type for the shared GKE cluster. Single-node by default, so size for peak concurrent worker pods (scale by machine, not node count, to keep shared hostPath volumes working)."
+  type        = string
+  default     = "e2-standard-8"
+}
+
+variable "gke_node_count" {
+  description = "Node count for the primary pool. Keep at 1 unless you move shared volumes to RWX/Filestore — a multi-node pool breaks node-local hostPath sharing."
+  type        = number
+  default     = 1
+}
+
+variable "gke_release_channel" {
+  description = "GKE release channel (RAPID | REGULAR | STABLE)."
+  type        = string
+  default     = "REGULAR"
+}
+
+variable "eso_chart_version" {
+  description = "External Secrets Operator Helm chart version (charts.external-secrets.io)."
+  type        = string
+  default     = "0.10.4"
+}
+
 variable "machine_consumer_keys" {
   description = "Also create a JSON key per machine consumer and store it in Secret Manager (machine-consumer-<name>-key). CAVEAT: the private key is persisted in Terraform state — acceptable for a single-operator platform with a locked-down state bucket; set false and mint keys manually with gcloud if that's not you. Fetch: gcloud secrets versions access latest --secret=machine-consumer-<name>-key"
   type        = bool

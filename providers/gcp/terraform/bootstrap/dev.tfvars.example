@@ -7,3 +7,5 @@ region           = "europe-west1"
 # create_dns_zone = false                    # set to false if the DNS zone already exists (e.g. created by GCP domain registration)
 # machine_consumers = ["agentops"]           # optional: SAs for external systems calling apps' MCP services (allow-listed per-app via mcp.allowed_service_accounts)
 # machine_consumer_keys = true               # optional: create keys + store in Secret Manager (key also lands in TF state — see variable docs)
+# enable_gke        = true                    # optional: shared GKE cluster + External Secrets Operator, for apps with a `kubernetes:` block (e.g. agentops-operator)
+# gke_machine_type  = "e2-standard-8"         # optional: node size (single node by default — scale by machine, not count)
