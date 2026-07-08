@@ -49,8 +49,8 @@ output "mcp_url" {
 # ── Kubernetes app provisioning (A3) — consumed by _kubernetes.yml → helm --set,
 # so the chart never hardcodes these names.
 output "k8s_cloudsql_sa_email" {
-  description = "Cloud SQL client GSA the proxy pod assumes via Workload Identity (empty when no kubernetes: block)."
-  value       = var.has_kubernetes ? google_service_account.k8s_cloudsql[0].email : ""
+  description = "Shared Cloud SQL client GSA the proxy pod assumes via Workload Identity (empty when no kubernetes: block)."
+  value       = var.has_kubernetes ? local.gke_cloudsql_sa_email : ""
 }
 
 output "k8s_cloudsql_ksa" {
