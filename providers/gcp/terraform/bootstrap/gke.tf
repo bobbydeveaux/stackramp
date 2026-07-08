@@ -117,6 +117,27 @@ resource "google_project_iam_member" "eso_reader_accessor" {
   member  = "serviceAccount:${google_service_account.eso_reader[0].email}"
 }
 
+# ── Shared Cloud SQL client identity for k8s apps ─────────────────────────────
+# One GSA with roles/cloudsql.client, granted here at bootstrap (the operator
+# applies with owner creds, so the project-IAM grant is allowed). Every k8s
+# app's Cloud SQL Auth Proxy WI-binds its namespace KSA to this GSA (see the
+# per-app platform terraform) — so the platform CICD SA never needs
+# project-IAM-admin to grant cloudsql.client per app. The DB user/password
+# still gates actual per-app database access.
+resource "google_service_account" "gke_cloudsql_client" {
+  count        = var.enable_gke ? 1 : 0
+  account_id   = "gke-cloudsql-client"
+  display_name = "GKE apps — shared Cloud SQL client"
+  description  = "Assumed by k8s apps' Cloud SQL Auth Proxy pods via Workload Identity. Holds roles/cloudsql.client on the project."
+}
+
+resource "google_project_iam_member" "gke_cloudsql_client" {
+  count   = var.enable_gke ? 1 : 0
+  project = local.platform_project
+  role    = "roles/cloudsql.client"
+  member  = "serviceAccount:${google_service_account.gke_cloudsql_client[0].email}"
+}
+
 # Bind the ESO controller KSA (external-secrets/external-secrets) to the GSA.
 # Depends on the cluster: the <project>.svc.id.goog Workload Identity pool only
 # exists once a WI-enabled cluster is created, so this binding must run after it.

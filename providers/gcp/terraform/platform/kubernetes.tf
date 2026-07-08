@@ -1,8 +1,8 @@
 # Per-app provisioning for `kubernetes:` apps (A3). The chart + _kubernetes.yml
 # deploy the app onto the shared GKE cluster; this file provisions the GCP-side
 # resources a k8s app needs so the deploy is fully self-service (no manual GCP):
-#   - a Cloud SQL client identity the in-cluster proxy assumes via Workload
-#     Identity (keyless),
+#   - binds the app's Cloud SQL proxy KSA to the shared cloudsql-client GSA
+#     (Workload Identity, keyless),
 #   - platform-generated secrets (jwt, bootstrap) written to Secret Manager for
 #     ESO to sync — no human involvement.
 # Terraform OWNS these names and exposes them as outputs; the deploy job passes
@@ -19,28 +19,21 @@ locals {
   # Secret Manager name prefix for this app+env; the chart's ExternalSecret
   # references <prefix>-<key>.
   k8s_secret_prefix = "${var.app_name}-${var.environment}"
+  # Shared Cloud SQL client GSA — created ONCE at bootstrap (gke.tf) with
+  # roles/cloudsql.client. Every k8s app's proxy WI-binds to it. Deterministic
+  # name so this per-app terraform needn't cross into bootstrap state. Using a
+  # shared identity keeps the deploy SA at SA-level IAM only (the WI binding
+  # below) — it never needs project-IAM-admin to grant cloudsql.client per app.
+  gke_cloudsql_sa_email = "gke-cloudsql-client@${var.platform_project}.iam.gserviceaccount.com"
 }
 
-# Cloud SQL client identity for the in-cluster proxy (keyless — assumed via
-# Workload Identity, no SA key).
-resource "google_service_account" "k8s_cloudsql" {
-  count        = var.has_kubernetes ? 1 : 0
-  account_id   = "${var.app_name}-cloudsql"
-  display_name = "${var.app_name} Cloud SQL proxy (GKE)"
-  description  = "Assumed by the ${var.app_name} Cloud SQL Auth Proxy pod via Workload Identity."
-}
-
-resource "google_project_iam_member" "k8s_cloudsql_client" {
-  count   = var.has_kubernetes ? 1 : 0
-  project = var.platform_project
-  role    = "roles/cloudsql.client"
-  member  = "serviceAccount:${google_service_account.k8s_cloudsql[0].email}"
-}
-
-# Bind the proxy KSA (namespace/cloudsql-proxy) to the GSA.
+# Bind this app's proxy KSA (<namespace>/cloudsql-proxy) to the shared
+# cloudsql-client GSA via Workload Identity. google_service_account_iam_member
+# is additive + only needs SA-level IAM (iam.serviceAccountAdmin), which the
+# platform CICD SA has — no project-IAM-admin required.
 resource "google_service_account_iam_member" "k8s_cloudsql_wi" {
   count              = var.has_kubernetes ? 1 : 0
-  service_account_id = google_service_account.k8s_cloudsql[0].name
+  service_account_id = "projects/${var.platform_project}/serviceAccounts/${local.gke_cloudsql_sa_email}"
   role               = "roles/iam.workloadIdentityUser"
   member             = "serviceAccount:${var.platform_project}.svc.id.goog[${var.kubernetes_namespace}/${local.k8s_cloudsql_ksa}]"
 }
