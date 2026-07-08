@@ -115,11 +115,14 @@ resource "google_project_iam_member" "eso_reader_accessor" {
 }
 
 # Bind the ESO controller KSA (external-secrets/external-secrets) to the GSA.
+# Depends on the cluster: the <project>.svc.id.goog Workload Identity pool only
+# exists once a WI-enabled cluster is created, so this binding must run after it.
 resource "google_service_account_iam_member" "eso_workload_identity" {
   count              = var.enable_gke ? 1 : 0
   service_account_id = google_service_account.eso_reader[0].name
   role               = "roles/iam.workloadIdentityUser"
   member             = "serviceAccount:${local.platform_project}.svc.id.goog[external-secrets/external-secrets]"
+  depends_on         = [google_container_cluster.platform]
 }
 
 # Providers pointed at the just-created cluster. When enable_gke=false the
