@@ -187,8 +187,16 @@ runs:
         HAS_BACKEND="false"
         [ "$BACKEND_LANG" != "none" ] && [ "$BACKEND_LANG" != "null" ] && HAS_BACKEND="true"
 
-        if [ "$HAS_FRONTEND" = "false" ] && [ "$HAS_BACKEND" = "false" ]; then
-          echo "::error::stackramp.yaml must define at least one of frontend or backend."
+        # A deployable can be frontend, backend, mcp, OR kubernetes (a k8s app
+        # runs its own workloads via its Helm chart — no Cloud Run frontend/
+        # backend required). mcp/kubernetes are parsed further down; detect their
+        # blocks inline here so the guard doesn't reject a valid k8s-only app.
+        MCP_BLOCK_CHECK=$(yq '.mcp' "$CONFIG")
+        K8S_BLOCK_CHECK=$(yq '.kubernetes' "$CONFIG")
+        HAS_MCP_BLOCK="false"; { [ -n "$MCP_BLOCK_CHECK" ] && [ "$MCP_BLOCK_CHECK" != "null" ]; } && HAS_MCP_BLOCK="true"
+        HAS_K8S_BLOCK="false"; { [ -n "$K8S_BLOCK_CHECK" ] && [ "$K8S_BLOCK_CHECK" != "null" ]; } && HAS_K8S_BLOCK="true"
+        if [ "$HAS_FRONTEND" = "false" ] && [ "$HAS_BACKEND" = "false" ] && [ "$HAS_MCP_BLOCK" = "false" ] && [ "$HAS_K8S_BLOCK" = "false" ]; then
+          echo "::error::stackramp.yaml must define at least one deployable: frontend, backend, mcp, or kubernetes."
           exit 1
         fi
 
