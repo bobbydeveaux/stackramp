@@ -262,3 +262,38 @@ resource "kubectl_manifest" "cicd_rbac_manager_binding" {
   })
   depends_on = [kubectl_manifest.cicd_rbac_manager]
 }
+
+# ── CICD SA → native workload RBAC (escalation-check fix) ─────────────────────
+# App charts ship namespaced Roles granting their ServiceAccount workload verbs
+# (agentops' Role grants pods, pods/log, batch/jobs). k8s' RBAC
+# escalation-prevention check only allows creating a Role if the CREATOR already
+# holds every permission the Role grants — and, critically, it resolves the
+# creator's permissions from NATIVE RBAC ONLY. It does not see the SA's
+# roles/container.developer grant (that's a GKE IAM webhook authorizer, invisible
+# to the escalation RuleResolver), so Helm's Role creation is refused with
+# "attempting to grant RBAC permissions not currently held".
+#
+# Fix: bind the SA to the built-in `edit` ClusterRole via native RBAC. Now the
+# escalation resolver sees it natively holds pods/jobs/etc., so it can create app
+# Roles that grant subsets of `edit` — but it still CANNOT escalate beyond `edit`
+# (no rbac, no cluster-scoped, no escalate verb). Reusable for any app whose
+# chart RBAC stays within `edit`.
+resource "kubectl_manifest" "cicd_workload_binding" {
+  count = var.enable_gke ? 1 : 0
+  yaml_body = yamlencode({
+    apiVersion = "rbac.authorization.k8s.io/v1"
+    kind       = "ClusterRoleBinding"
+    metadata   = { name = "stackramp-cicd-workload" }
+    roleRef = {
+      apiGroup = "rbac.authorization.k8s.io"
+      kind     = "ClusterRole"
+      name     = "edit"
+    }
+    subjects = [{
+      kind     = "User"
+      name     = google_service_account.platform_cicd.email
+      apiGroup = "rbac.authorization.k8s.io"
+    }]
+  })
+  depends_on = [google_container_node_pool.primary]
+}
