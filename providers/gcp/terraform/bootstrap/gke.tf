@@ -213,3 +213,52 @@ resource "kubectl_manifest" "cluster_secret_store" {
   })
   depends_on = [helm_release.external_secrets]
 }
+
+# ── CICD SA → Kubernetes RBAC management ──────────────────────────────────────
+# App Helm charts may ship namespaced RBAC (agentops creates worker Jobs, so its
+# chart ships a Role + RoleBinding). GKE gates rbac.authorization.k8s.io creation
+# behind roles/container.admin in Cloud IAM — but container.admin also grants
+# cluster create/delete, far more than a deploy identity whose key lives in
+# GitHub should hold. So the SA stays at roles/container.developer (workloads
+# only, see platform_roles in main.tf) and we grant JUST k8s RBAC management via
+# this ClusterRole/Binding, applied here with the operator's (admin) creds. The
+# GKE user identity for the SA is its email (see the forbidden-error subject).
+# Deliberately NO bind/escalate verbs: k8s' escalation check passes as long as
+# the app Role only grants verbs the SA already holds via container.developer
+# (agentops' Role grants jobs+pods — both covered). Omitting escalate keeps the
+# CI identity unable to self-elevate. If a future app's chart ships RBAC that
+# grants permissions beyond container.developer, add bind/escalate then.
+resource "kubectl_manifest" "cicd_rbac_manager" {
+  count = var.enable_gke ? 1 : 0
+  yaml_body = yamlencode({
+    apiVersion = "rbac.authorization.k8s.io/v1"
+    kind       = "ClusterRole"
+    metadata   = { name = "stackramp-cicd-rbac-manager" }
+    rules = [{
+      apiGroups = ["rbac.authorization.k8s.io"]
+      resources = ["roles", "rolebindings"]
+      verbs     = ["create", "get", "list", "watch", "update", "patch", "delete"]
+    }]
+  })
+  depends_on = [google_container_node_pool.primary]
+}
+
+resource "kubectl_manifest" "cicd_rbac_manager_binding" {
+  count = var.enable_gke ? 1 : 0
+  yaml_body = yamlencode({
+    apiVersion = "rbac.authorization.k8s.io/v1"
+    kind       = "ClusterRoleBinding"
+    metadata   = { name = "stackramp-cicd-rbac-manager" }
+    roleRef = {
+      apiGroup = "rbac.authorization.k8s.io"
+      kind     = "ClusterRole"
+      name     = "stackramp-cicd-rbac-manager"
+    }
+    subjects = [{
+      kind     = "User"
+      name     = google_service_account.platform_cicd.email
+      apiGroup = "rbac.authorization.k8s.io"
+    }]
+  })
+  depends_on = [kubectl_manifest.cicd_rbac_manager]
+}
