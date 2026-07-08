@@ -1,0 +1,136 @@
+name: "Deploy Kubernetes App (GKE + Helm)"
+
+# Deploys an app's Helm chart onto the shared GKE cluster (bootstrap enable_gke).
+# For apps that need a real k8s cluster — dispatch k8s Jobs, run stateful
+# workloads — rather than Cloud Run. Builds the declared images to Artifact
+# Registry, then `helm upgrade --install` into the app's namespace. Secrets are
+# NOT handled here — the chart ships ExternalSecret CRs that the cluster's ESO
+# reconciles from Secret Manager (bootstrap A1b).
+
+on:
+  workflow_call:
+    inputs:
+      app_name:
+        type: string
+        required: true
+      chart:
+        type: string
+        required: true
+        description: "Path to the Helm chart in the app repo."
+      namespace:
+        type: string
+        required: true
+      domain:
+        type: string
+        required: false
+        default: ""
+      values_json:
+        type: string
+        required: false
+        default: "{}"
+        description: "Inline Helm value overrides (compact JSON from kubernetes.values)."
+      images_json:
+        type: string
+        required: false
+        default: "[]"
+        description: "Images to build+push (compact JSON array of {name,dockerfile,context})."
+      environment:
+        type: string
+        required: true
+      platform_project:
+        type: string
+        required: true
+      region:
+        type: string
+        required: false
+        default: europe-west1
+      gke_cluster:
+        type: string
+        required: true
+      gke_location:
+        type: string
+        required: true
+      wif_provider:
+        type: string
+        required: true
+      service_account:
+        type: string
+        required: true
+    outputs:
+      release:
+        description: "Installed Helm release name"
+        value: ${{ jobs.deploy.outputs.release }}
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    name: GKE (Helm)
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.helm.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: bobbydeveaux/stackramp/providers/gcp/workflows/auth@main
+        with:
+          wif_provider: ${{ inputs.wif_provider }}
+          service_account: ${{ inputs.service_account }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Install kubectl + helm + GKE auth plugin
+        run: |
+          gcloud components install gke-gcloud-auth-plugin --quiet
+          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ inputs.region }}-docker.pkg.dev
+
+      - name: Build + push images
+        env:
+          REGISTRY: ${{ inputs.region }}-docker.pkg.dev/${{ inputs.platform_project }}/stackramp-images
+        run: |
+          echo '${{ inputs.images_json }}' | jq -c '.[]' | while read -r img; do
+            NAME=$(echo "$img" | jq -r .name)
+            DOCKERFILE=$(echo "$img" | jq -r .dockerfile)
+            CONTEXT=$(echo "$img" | jq -r .context)
+            IMAGE="${REGISTRY}/${NAME}:${{ github.sha }}"
+            echo "Building $IMAGE from $DOCKERFILE (context $CONTEXT)"
+            docker build -t "$IMAGE" -f "$DOCKERFILE" "$CONTEXT"
+            docker push "$IMAGE"
+          done
+
+      - name: Get GKE credentials
+        run: |
+          gcloud container clusters get-credentials "${{ inputs.gke_cluster }}" \
+            --location "${{ inputs.gke_location }}" \
+            --project "${{ inputs.platform_project }}"
+
+      - name: Helm upgrade --install
+        id: helm
+        env:
+          REGISTRY: ${{ inputs.region }}-docker.pkg.dev/${{ inputs.platform_project }}/stackramp-images
+        run: |
+          RELEASE="${{ inputs.app_name }}"
+
+          # Inline value overrides from the kubernetes.values block.
+          echo '${{ inputs.values_json }}' > /tmp/values.json
+
+          HELM_ARGS=(
+            upgrade --install "$RELEASE" "${{ inputs.chart }}"
+            --namespace "${{ inputs.namespace }}" --create-namespace
+            --set image.registry="$REGISTRY"
+            --set image.tag="${{ github.sha }}"
+            -f /tmp/values.json
+            --wait --timeout 10m
+          )
+          [ -n "${{ inputs.domain }}" ] && HELM_ARGS+=(--set ingress.enabled=true --set ingress.domain="${{ inputs.domain }}")
+
+          helm "${HELM_ARGS[@]}"
+          echo "release=$RELEASE" >> $GITHUB_OUTPUT
+          echo "Helm release '$RELEASE' deployed to namespace ${{ inputs.namespace }}"

@@ -3,7 +3,9 @@
   "title": "stackramp.yaml",
   "description": "StackRamp application configuration",
   "type": "object",
-  "required": ["name"],
+  "required": [
+    "name"
+  ],
   "properties": {
     "name": {
       "type": "string",
@@ -15,7 +17,13 @@
       "properties": {
         "framework": {
           "type": "string",
-          "enum": ["react", "vue", "next", "static", "none"],
+          "enum": [
+            "react",
+            "vue",
+            "next",
+            "static",
+            "none"
+          ],
           "default": "none"
         },
         "dir": {
@@ -33,7 +41,13 @@
       "properties": {
         "language": {
           "type": "string",
-          "enum": ["python", "go", "node", "rust", "none"],
+          "enum": [
+            "python",
+            "go",
+            "node",
+            "rust",
+            "none"
+          ],
           "default": "none"
         },
         "dir": {
@@ -66,8 +80,16 @@
     },
     "database": {
       "oneOf": [
-        { "type": "boolean" },
-        { "type": "string", "enum": ["postgres", "mysql"] }
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "string",
+          "enum": [
+            "postgres",
+            "mysql"
+          ]
+        }
       ],
       "default": false
     },
@@ -75,22 +97,46 @@
       "type": "object",
       "description": "Guardian security scanning. Enabled by default.",
       "properties": {
-        "enabled": { "type": "boolean", "default": true },
-        "scan_osv": { "type": "boolean", "default": true },
-        "scan_secrets": { "type": "boolean", "default": true },
-        "scan_sast": { "type": "boolean", "default": true },
-        "fail_on_findings": { "type": "boolean", "default": true }
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "scan_osv": {
+          "type": "boolean",
+          "default": true
+        },
+        "scan_secrets": {
+          "type": "boolean",
+          "default": true
+        },
+        "scan_sast": {
+          "type": "boolean",
+          "default": true
+        },
+        "fail_on_findings": {
+          "type": "boolean",
+          "default": true
+        }
       }
     },
     "storage": {
       "description": "Object storage. Scalar forms (false | gcs) keep the legacy single-bucket behaviour. The object form declares one or more named private GCS buckets.",
       "default": false,
       "oneOf": [
-        { "type": "boolean" },
-        { "type": "string", "enum": ["gcs"] },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "string",
+          "enum": [
+            "gcs"
+          ]
+        },
         {
           "type": "object",
-          "required": ["buckets"],
+          "required": [
+            "buckets"
+          ],
           "additionalProperties": false,
           "properties": {
             "buckets": {
@@ -98,7 +144,9 @@
               "minItems": 1,
               "items": {
                 "type": "object",
-                "required": ["name"],
+                "required": [
+                  "name"
+                ],
                 "additionalProperties": false,
                 "properties": {
                   "name": {
@@ -108,7 +156,10 @@
                   },
                   "access": {
                     "type": "string",
-                    "enum": ["private", "public"],
+                    "enum": [
+                      "private",
+                      "public"
+                    ],
                     "default": "private",
                     "description": "Bucket access. Only 'private' (the default) is supported: public access prevention is enforced. 'public' is reserved for a future release and is currently rejected at validation time (public buckets / CDN fronting are out of scope)."
                   },
@@ -132,11 +183,16 @@
     },
     "mcp": {
       "type": "object",
-      "description": "MCP (Model Context Protocol) server. Deployed as a separate Cloud Run service with domain-restricted invoker — no IAP, no allUsers.",
+      "description": "MCP (Model Context Protocol) server. Deployed as a separate Cloud Run service with domain-restricted invoker \u2014 no IAP, no allUsers.",
       "properties": {
         "language": {
           "type": "string",
-          "enum": ["python", "go", "node", "rust"],
+          "enum": [
+            "python",
+            "go",
+            "node",
+            "rust"
+          ],
           "default": "go"
         },
         "dir": {
@@ -162,8 +218,10 @@
         },
         "allowed_service_accounts": {
           "type": "array",
-          "items": { "type": "string" },
-          "description": "Machine consumer SA emails allowed to call this MCP service with Google-signed ID tokens (e.g. agentops@project.iam.gserviceaccount.com — provisioned by the bootstrap's machine_consumers). Injected into the MCP service as MCP_SERVICE_ACCOUNTS, semicolon-joined."
+          "items": {
+            "type": "string"
+          },
+          "description": "Machine consumer SA emails allowed to call this MCP service with Google-signed ID tokens (e.g. agentops@project.iam.gserviceaccount.com \u2014 provisioned by the bootstrap's machine_consumers). Injected into the MCP service as MCP_SERVICE_ACCOUNTS, semicolon-joined."
         }
       }
     },
@@ -171,13 +229,86 @@
       "type": "object",
       "description": "Pulse code quality gates. Enabled by default.",
       "properties": {
-        "enabled": { "type": "boolean", "default": true },
-        "max_ccn": { "type": "integer", "default": 15, "minimum": 1 },
-        "max_cognitive": { "type": "integer", "default": 20, "minimum": 1 },
-        "max_duplication": { "type": "number", "default": 5, "minimum": 0, "maximum": 100 },
-        "min_maintainability": { "type": "number", "default": 40, "minimum": 0, "maximum": 100 },
-        "fail_on_gate": { "type": "boolean", "default": true }
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "max_ccn": {
+          "type": "integer",
+          "default": 15,
+          "minimum": 1
+        },
+        "max_cognitive": {
+          "type": "integer",
+          "default": 20,
+          "minimum": 1
+        },
+        "max_duplication": {
+          "type": "number",
+          "default": 5,
+          "minimum": 0,
+          "maximum": 100
+        },
+        "min_maintainability": {
+          "type": "number",
+          "default": 40,
+          "minimum": 0,
+          "maximum": 100
+        },
+        "fail_on_gate": {
+          "type": "boolean",
+          "default": true
+        }
       }
+    },
+    "kubernetes": {
+      "type": "object",
+      "description": "Helm release on the shared GKE cluster (bootstrap enable_gke). For apps that need a real k8s cluster \u2014 dispatch k8s Jobs, run a Helm chart \u2014 rather than Cloud Run.",
+      "properties": {
+        "chart": {
+          "type": "string",
+          "description": "Path to the Helm chart in the repo (default deploy/helm/<app>)."
+        },
+        "namespace": {
+          "type": "string",
+          "description": "Namespace to install into (default: app name)."
+        },
+        "domain": {
+          "type": "string",
+          "description": "Ingress host (e.g. app.stackramp.io). Omit for no ingress."
+        },
+        "values": {
+          "type": "object",
+          "description": "Inline Helm value overrides."
+        },
+        "images": {
+          "type": "array",
+          "description": "Images StackRamp builds + pushes to Artifact Registry before helm install (tag = git SHA). Each maps to a Helm value the chart references. Images NOT listed (e.g. a cross-repo dependency) must be pre-published and pinned in the chart's values.",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "dockerfile"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Image name under the shared registry (e.g. agentops-api)."
+              },
+              "dockerfile": {
+                "type": "string",
+                "description": "Path to the Dockerfile (e.g. Dockerfile.api)."
+              },
+              "context": {
+                "type": "string",
+                "description": "Docker build context (default: repo root)."
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

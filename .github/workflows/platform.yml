@@ -84,6 +84,13 @@ jobs:
       mcp_public: ${{ steps.config.outputs.mcp_public }}
       mcp_service_accounts: ${{ steps.config.outputs.mcp_service_accounts }}
       mcp_changed: ${{ steps.changes.outputs.mcp }}
+      has_kubernetes: ${{ steps.config.outputs.has_kubernetes }}
+      kubernetes_chart: ${{ steps.config.outputs.kubernetes_chart }}
+      kubernetes_namespace: ${{ steps.config.outputs.kubernetes_namespace }}
+      kubernetes_domain: ${{ steps.config.outputs.kubernetes_domain }}
+      kubernetes_values: ${{ steps.config.outputs.kubernetes_values }}
+      kubernetes_images: ${{ steps.config.outputs.kubernetes_images }}
+      kubernetes_changed: ${{ steps.changes.outputs.kubernetes }}
 
     steps:
       - uses: actions/checkout@v4
@@ -113,6 +120,9 @@ jobs:
               - '${{ inputs.config_path }}'
             mcp:
               - '${{ steps.config.outputs.mcp_dir }}/**'
+              - '${{ inputs.config_path }}'
+            kubernetes:
+              - '${{ steps.config.outputs.kubernetes_chart }}/**'
               - '${{ inputs.config_path }}'
 
   # ─────────────────────────────────────────────────────────────────────────────
@@ -448,6 +458,30 @@ jobs:
       public: ${{ needs.parse-config.outputs.mcp_public }}
       extra_env_vars: ${{ needs.parse-config.outputs.mcp_service_accounts != '' && format('MCP_SERVICE_ACCOUNTS={0}', needs.parse-config.outputs.mcp_service_accounts) || '' }}
 
+  deploy-kubernetes:
+    name: Kubernetes app
+    needs: [parse-config, provision]
+    if: |
+      needs.provision.result == 'success' &&
+      needs.parse-config.outputs.has_kubernetes == 'true' &&
+      (needs.parse-config.outputs.kubernetes_changed == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request')
+    uses: bobbydeveaux/stackramp/.github/workflows/_kubernetes.yml@main
+    secrets: inherit
+    with:
+      app_name: ${{ needs.parse-config.outputs.app_name }}
+      chart: ${{ needs.parse-config.outputs.kubernetes_chart }}
+      namespace: ${{ needs.parse-config.outputs.kubernetes_namespace }}
+      domain: ${{ needs.parse-config.outputs.kubernetes_domain }}
+      values_json: ${{ needs.parse-config.outputs.kubernetes_values }}
+      images_json: ${{ needs.parse-config.outputs.kubernetes_images }}
+      environment: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || 'dev' }}
+      platform_project: ${{ vars.STACKRAMP_PROJECT }}
+      region: ${{ vars.STACKRAMP_REGION || 'europe-west1' }}
+      gke_cluster: ${{ vars.STACKRAMP_GKE_CLUSTER }}
+      gke_location: ${{ vars.STACKRAMP_GKE_LOCATION }}
+      wif_provider: ${{ vars.STACKRAMP_WIF_PROVIDER }}
+      service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
+
   # ─────────────────────────────────────────────────────────────────────────────
   # 4. Deploy to PROD (main branch only, after dev succeeds)
   # ─────────────────────────────────────────────────────────────────────────────
@@ -545,3 +579,28 @@ jobs:
       vpc_connector: ${{ vars.STACKRAMP_VPC_CONNECTOR || '' }}
       public: ${{ needs.parse-config.outputs.mcp_public }}
       extra_env_vars: ${{ needs.parse-config.outputs.mcp_service_accounts != '' && format('MCP_SERVICE_ACCOUNTS={0}', needs.parse-config.outputs.mcp_service_accounts) || '' }}
+
+  deploy-kubernetes-prod:
+    name: Kubernetes app → prod
+    needs: [parse-config, provision, deploy-kubernetes]
+    if: |
+      github.ref == 'refs/heads/main' && github.event_name == 'push' &&
+      needs.provision.result == 'success' &&
+      needs.parse-config.outputs.has_kubernetes == 'true' &&
+      (needs.deploy-kubernetes.result == 'success' || needs.deploy-kubernetes.result == 'skipped')
+    uses: bobbydeveaux/stackramp/.github/workflows/_kubernetes.yml@main
+    secrets: inherit
+    with:
+      app_name: ${{ needs.parse-config.outputs.app_name }}
+      chart: ${{ needs.parse-config.outputs.kubernetes_chart }}
+      namespace: ${{ needs.parse-config.outputs.kubernetes_namespace }}
+      domain: ${{ needs.parse-config.outputs.kubernetes_domain }}
+      values_json: ${{ needs.parse-config.outputs.kubernetes_values }}
+      images_json: ${{ needs.parse-config.outputs.kubernetes_images }}
+      environment: prod
+      platform_project: ${{ vars.STACKRAMP_PROJECT }}
+      region: ${{ vars.STACKRAMP_REGION || 'europe-west1' }}
+      gke_cluster: ${{ vars.STACKRAMP_GKE_CLUSTER }}
+      gke_location: ${{ vars.STACKRAMP_GKE_LOCATION }}
+      wif_provider: ${{ vars.STACKRAMP_WIF_PROVIDER }}
+      service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
