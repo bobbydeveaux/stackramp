@@ -73,6 +73,21 @@ output "machine_consumer_key_secrets" {
   value       = { for name, s in google_secret_manager_secret.machine_consumer_key : name => s.secret_id }
 }
 
+output "gke_cluster_name" {
+  description = "Set as GitHub Variable: STACKRAMP_GKE_CLUSTER (only when enable_gke = true)"
+  value       = var.enable_gke ? google_container_cluster.platform[0].name : ""
+}
+
+output "gke_location" {
+  description = "Set as GitHub Variable: STACKRAMP_GKE_LOCATION (only when enable_gke = true)"
+  value       = var.enable_gke ? google_container_cluster.platform[0].location : ""
+}
+
+output "eso_reader_sa_email" {
+  description = "ESO Secret Manager reader SA (only when enable_gke = true). Bound to the external-secrets/external-secrets KSA via Workload Identity."
+  value       = var.enable_gke ? google_service_account.eso_reader[0].email : ""
+}
+
 output "github_variables_summary" {
   description = "Copy these values to your GitHub org/repo Variables"
   value       = <<-EOT
@@ -90,6 +105,7 @@ output "github_variables_summary" {
     ${var.base_domain != "" ? "│ STACKRAMP_BASE_DOMAIN  = ${var.base_domain}\n    │ STACKRAMP_DNS_ZONE     = ${replace(var.base_domain, ".", "-")}" : ""}
     ${var.enable_postgres ? "│ STACKRAMP_CLOUDSQL_CONNECTION = ${google_sql_database_instance.platform[0].connection_name}${var.postgres_private_ip ? "\n    │ STACKRAMP_VPC_CONNECTOR       = ${google_vpc_access_connector.platform[0].name}" : ""}" : ""}
     ${var.iap_allowed_domain != "" ? "│ STACKRAMP_IAP_DOMAIN          = ${var.iap_allowed_domain}" : ""}
+    ${var.enable_gke ? "│ STACKRAMP_GKE_CLUSTER        = ${google_container_cluster.platform[0].name}\n    │ STACKRAMP_GKE_LOCATION       = ${google_container_cluster.platform[0].location}" : ""}
     │                                                                    │
     └──────────────────────────────────────────────────────────────────────┘
 

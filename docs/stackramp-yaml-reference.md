@@ -269,6 +269,32 @@ storage: gcs
 
 ---
 
+### `kubernetes` (optional)
+
+For apps that need a real Kubernetes cluster (dispatch k8s Jobs, run a Helm
+chart) instead of Cloud Run. Helm-installs the app into its own namespace on the
+shared GKE cluster (requires `enable_gke = true` at bootstrap).
+
+```yaml
+kubernetes:
+  chart: deploy/helm/myapp        # default: deploy/helm/<app>
+  namespace: myapp                # default: app name
+  domain: myapp.stackramp.io      # optional — GKE ingress + managed cert
+  images:                         # StackRamp builds + pushes (tag = git SHA)
+    - { name: myapp-api, dockerfile: Dockerfile.api, context: . }
+  values: { ... }                 # inline Helm value overrides
+```
+
+> ⚠️ **Known limitation — single-node cluster, no horizontal scale.** The shared
+> GKE cluster is intentionally single-node (the shared `hostPath` volume is
+> node-local). You can scale **up** (bigger machine) but **not out** until shared
+> RWX storage (Filestore) replaces the hostPath. See
+> [kubernetes-primitive.md](./kubernetes-primitive.md#-known-limitation-single-node-no-horizontal-scale-fix-before-high-load)
+> for the full constraint and the fix path — **read it before raising node count
+> or going regional.**
+
+---
+
 ## What NOT to Put in stackramp.yaml
 
 The following are **platform operator concerns**, not app developer concerns:

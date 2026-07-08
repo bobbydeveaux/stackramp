@@ -12,6 +12,14 @@ terraform {
       source  = "hashicorp/google-beta"
       version = "~> 7.0"
     }
+    helm = {
+      source  = "hashicorp/helm"
+      version = "~> 2.13"
+    }
+    kubectl = {
+      source  = "gavinbunney/kubectl"
+      version = "~> 1.14"
+    }
   }
 }
 
@@ -54,6 +62,7 @@ resource "google_project_service" "apis" {
     "iap.googleapis.com",
     "servicenetworking.googleapis.com",
     "vpcaccess.googleapis.com",
+    "container.googleapis.com",
   ])
 
   service            = each.value

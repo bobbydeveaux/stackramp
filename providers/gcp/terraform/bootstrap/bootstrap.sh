@@ -164,7 +164,21 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
 fi
 
 # ── Apply ─────────────────────────────────────────────────────────────────────
+# GKE two-phase: the helm + kubectl providers are configured from the cluster's
+# endpoint, which doesn't exist on a cold apply — a single-shot apply fails
+# ("cluster unreachable"). When enable_gke=true, create the cluster + node pool
+# first, then apply the rest (ESO Helm release + ClusterSecretStore) once the
+# endpoint is real. Idempotent: on re-runs phase 1 is a fast no-op.
+ENABLE_GKE=$(grep -E '^enable_gke[[:space:]]*=' "$TFVARS_FILE" | grep -c 'true' || true)
+
 print_info "Applying..."
+if [ "$ENABLE_GKE" -gt 0 ]; then
+    print_info "GKE enabled — phase 1: cluster + node pool..."
+    terraform apply -var-file="$TFVARS_FILE" -auto-approve \
+        -target=google_container_node_pool.primary \
+        -target=google_service_account_iam_member.eso_workload_identity
+    print_info "Phase 2: remaining resources (ESO, ClusterSecretStore, ...)..."
+fi
 terraform apply -var-file="$TFVARS_FILE" -auto-approve
 print_success "Bootstrap resources deployed!"
 
@@ -208,6 +222,10 @@ if cloudsql:
 iap_domain = '${IAP_DOMAIN}'
 if iap_domain:
     print(f'      STACKRAMP_IAP_DOMAIN           = {iap_domain}')
+gke = data.get('gke_cluster_name', {}).get('value', '')
+if gke:
+    print(f'      STACKRAMP_GKE_CLUSTER          = {gke}')
+    print(f'      STACKRAMP_GKE_LOCATION         = {data.get(\"gke_location\", {}).get(\"value\", \"\")}')
 ns = data.get('dns_zone_nameservers', {}).get('value', [])
 if ns:
     print()
