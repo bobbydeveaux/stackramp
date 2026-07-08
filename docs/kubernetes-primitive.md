@@ -74,3 +74,20 @@ then a multi-node pool becomes safe:
 Tracking: this note exists so the constraint is a deliberate, documented
 trade-off — not a surprise under load. Revisit when a single `e2-standard-*`
 node can no longer absorb peak concurrent dispatches.
+
+## Operator gotcha: changing a force-new cluster attribute
+
+Changing the cluster **zone** (or any `ForceNew` attribute that replaces the
+cluster) breaks `terraform plan` with `helm_release ... Kubernetes cluster
+unreachable`: the helm/kubectl providers are configured from the cluster's
+endpoint, and during a replacement that endpoint is unknown, so terraform can't
+refresh the existing in-cluster resources. Drop them from state first — they're
+recreated on the new cluster and the old copies die with the old cluster:
+
+```bash
+terraform state rm 'helm_release.external_secrets[0]' 'kubectl_manifest.cluster_secret_store[0]'
+./bootstrap.sh dev
+```
+
+This only applies to cluster *replacement* — routine applies and in-place
+changes are unaffected.
