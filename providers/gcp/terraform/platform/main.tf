@@ -515,7 +515,17 @@ resource "google_secret_manager_secret" "database_url" {
 resource "google_secret_manager_secret_version" "database_url" {
   count  = var.has_database ? 1 : 0
   secret = google_secret_manager_secret.database_url[0].id
-  secret_data = join("", [
+  # k8s apps reach Cloud SQL over TCP via the in-cluster Auth Proxy service
+  # (cloudsql-proxy:5432); Cloud Run apps use the unix socket the runtime mounts
+  # from --set-cloudsql-instances.
+  secret_data = var.has_kubernetes ? join("", [
+    "postgresql://",
+    google_sql_user.app[0].name,
+    ":",
+    random_password.db[0].result,
+    "@${local.k8s_cloudsql_ksa}:5432/",
+    google_sql_database.app[0].name,
+    ]) : join("", [
     "postgresql://",
     google_sql_user.app[0].name,
     ":",

@@ -102,3 +102,15 @@ variable "has_mcp" {
   type        = bool
   default     = false
 }
+
+variable "has_kubernetes" {
+  description = "Whether this app declares a kubernetes: block (Helm release on the shared GKE cluster). Gates the per-app k8s GCP provisioning (Cloud SQL client identity, generated secrets). Default false = inert for Cloud Run apps."
+  type        = bool
+  default     = false
+}
+
+variable "kubernetes_namespace" {
+  description = "Namespace the app's Helm release installs into (from kubernetes.namespace, default app name). Used to bind the Cloud SQL proxy KSA via Workload Identity."
+  type        = string
+  default     = ""
+}
