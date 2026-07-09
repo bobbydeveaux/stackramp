@@ -20,10 +20,16 @@ on:
       namespace:
         type: string
         required: true
-      domain:
+      custom_domain:
         type: string
         required: false
         default: ""
+        description: "Top-level stackramp.yaml domain (custom_domain output). The ingress host is derived from this per-env, mirroring Cloud Run: dev => <app>.dev.<base>, prod => <app>.<base>. Empty => no ingress."
+      base_domain:
+        type: string
+        required: false
+        default: ""
+        description: "STACKRAMP_BASE_DOMAIN, used with custom_domain to insert the .<env>. subdomain."
       values_json:
         type: string
         required: false
@@ -141,10 +147,25 @@ jobs:
             --namespace "${{ inputs.namespace }}" --create-namespace
             --set image.registry="$REGISTRY"
             --set image.tag="${{ github.sha }}"
+            --set environment="${{ inputs.environment }}"
             -f /tmp/values.json
             --wait --timeout 10m
           )
-          [ -n "${{ inputs.domain }}" ] && HELM_ARGS+=(--set ingress.enabled=true --set ingress.domain="${{ inputs.domain }}")
+          # Derive the ingress host from the top-level domain, per-env — the same
+          # rule Cloud Run uses (platform.yml provision), so there is ONE domain
+          # convention across every primitive:
+          #   canonical domain (<app>.<base>):  dev => <app>.<env>.<base>, prod => <app>.<base>
+          #   an explicit custom domain:         prod only (dev has no public host)
+          #   no domain:                         no ingress
+          APP="${{ inputs.app_name }}"; ENV="${{ inputs.environment }}"
+          CUSTOM_DOMAIN="${{ inputs.custom_domain }}"; BASE_DOMAIN="${{ inputs.base_domain }}"
+          HOST=""
+          if [ -n "$CUSTOM_DOMAIN" ] && [ -n "$BASE_DOMAIN" ] && [ "$CUSTOM_DOMAIN" = "${APP}.${BASE_DOMAIN}" ]; then
+            if [ "$ENV" = "prod" ]; then HOST="$CUSTOM_DOMAIN"; else HOST="${APP}.${ENV}.${BASE_DOMAIN}"; fi
+          elif [ -n "$CUSTOM_DOMAIN" ] && [ "$ENV" = "prod" ]; then
+            HOST="$CUSTOM_DOMAIN"
+          fi
+          [ -n "$HOST" ] && HELM_ARGS+=(--set ingress.enabled=true --set ingress.domain="$HOST")
           # Identifiers the platform terraform (A3) owns — injected here so the
           # chart never hardcodes them.
           [ -n "${{ inputs.cloudsql_sa_email }}" ] && HELM_ARGS+=(--set cloudsqlProxy.serviceAccount.gcpServiceAccount="${{ inputs.cloudsql_sa_email }}")

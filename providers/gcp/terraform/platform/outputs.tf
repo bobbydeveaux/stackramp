@@ -62,3 +62,8 @@ output "k8s_secret_prefix" {
   description = "Secret Manager name prefix (<app>-<env>) the chart's ExternalSecret references as <prefix>-<key>."
   value       = var.has_kubernetes ? local.k8s_secret_prefix : ""
 }
+
+output "k8s_namespace" {
+  description = "Env-suffixed namespace (<namespace>-<env>) the app is Helm-installed into. Consumed by the deploy job for `helm -n`, so it can never drift from the Workload Identity binding above."
+  value       = var.has_kubernetes ? local.k8s_namespace : ""
+}

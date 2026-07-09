@@ -271,11 +271,7 @@
         },
         "namespace": {
           "type": "string",
-          "description": "Namespace to install into (default: app name)."
-        },
-        "domain": {
-          "type": "string",
-          "description": "Ingress host (e.g. app.stackramp.io). Omit for no ingress."
+          "description": "Base namespace (default: app name). The deploy env is appended, so dev installs into <namespace>-dev and prod into <namespace>-prod on the same shared cluster."
         },
         "values": {
           "type": "object",
