@@ -83,6 +83,21 @@ output "gke_location" {
   value       = var.enable_gke ? google_container_cluster.platform[0].location : ""
 }
 
+output "gke_gateway_ip" {
+  description = "Global external IP of the shared GKE Gateway — every k8s app's DNS A-record points here (STACKRAMP_GKE_GATEWAY_IP)."
+  value       = local.gateway_enabled ? google_compute_global_address.gateway[0].address : ""
+}
+
+output "gke_gateway_name" {
+  description = "Name of the shared Gateway resource (STACKRAMP_GKE_GATEWAY_NAME)."
+  value       = local.gateway_enabled ? local.gateway_name : ""
+}
+
+output "gke_gateway_namespace" {
+  description = "Namespace the shared Gateway lives in; app HTTPRoutes parentRef it here (STACKRAMP_GKE_GATEWAY_NAMESPACE)."
+  value       = local.gateway_enabled ? local.gateway_namespace : ""
+}
+
 output "eso_reader_sa_email" {
   description = "ESO Secret Manager reader SA (only when enable_gke = true). Bound to the external-secrets/external-secrets KSA via Workload Identity."
   value       = var.enable_gke ? google_service_account.eso_reader[0].email : ""
@@ -106,6 +121,7 @@ output "github_variables_summary" {
     ${var.enable_postgres ? "│ STACKRAMP_CLOUDSQL_CONNECTION = ${google_sql_database_instance.platform[0].connection_name}${var.postgres_private_ip ? "\n    │ STACKRAMP_VPC_CONNECTOR       = ${google_vpc_access_connector.platform[0].name}" : ""}" : ""}
     ${var.iap_allowed_domain != "" ? "│ STACKRAMP_IAP_DOMAIN          = ${var.iap_allowed_domain}" : ""}
     ${var.enable_gke ? "│ STACKRAMP_GKE_CLUSTER        = ${google_container_cluster.platform[0].name}\n    │ STACKRAMP_GKE_LOCATION       = ${google_container_cluster.platform[0].location}" : ""}
+    ${local.gateway_enabled ? "│ STACKRAMP_GKE_GATEWAY_IP        = ${google_compute_global_address.gateway[0].address}\n    │ STACKRAMP_GKE_GATEWAY_NAME      = ${local.gateway_name}\n    │ STACKRAMP_GKE_GATEWAY_NAMESPACE = ${local.gateway_namespace}" : ""}
     │                                                                    │
     └──────────────────────────────────────────────────────────────────────┘
 
