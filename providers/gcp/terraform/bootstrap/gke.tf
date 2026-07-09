@@ -72,6 +72,13 @@ resource "google_container_cluster" "platform" {
     channel = var.gke_release_channel
   }
 
+  # Enable the Kubernetes Gateway API + install the gke-l7-* GatewayClasses, so
+  # the shared L7 Gateway (gke-gateway.tf) can be created. Without this the
+  # gke-l7-global-external-managed GatewayClass does not exist on the cluster.
+  gateway_api_config {
+    channel = "CHANNEL_STANDARD"
+  }
+
   deletion_protection = false
   depends_on          = [google_project_service.apis]
 }
