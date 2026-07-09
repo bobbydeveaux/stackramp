@@ -52,14 +52,17 @@ provider "random" {}
 # only new sites get the suffix stamped at first creation.
 
 resource "random_string" "site_suffix" {
-  count   = var.has_sso ? 0 : 1
+  # k8s apps have no Firebase frontend (they serve via the shared Gateway), so
+  # skip the whole Firebase/frontend-DNS path — otherwise its CNAME collides
+  # with the k8s A-record for the same host.
+  count   = var.has_sso || var.has_kubernetes ? 0 : 1
   length  = 5
   special = false
   upper   = false
 }
 
 resource "google_firebase_hosting_site" "app" {
-  count    = var.has_sso ? 0 : 1
+  count    = var.has_sso || var.has_kubernetes ? 0 : 1
   provider = google-beta
   project  = var.platform_project
   site_id  = "${var.app_name}-${random_string.site_suffix[0].result}-${var.environment}"
@@ -72,7 +75,7 @@ resource "google_firebase_hosting_site" "app" {
 # ── Custom Domain (Firebase Hosting, non-SSO only) ────────────────────────────
 
 resource "google_firebase_hosting_custom_domain" "app" {
-  count         = !var.has_sso && var.custom_domain != "" ? 1 : 0
+  count         = !var.has_sso && !var.has_kubernetes && var.custom_domain != "" ? 1 : 0
   provider      = google-beta
   project       = var.platform_project
   site_id       = google_firebase_hosting_site.app[0].site_id
@@ -89,7 +92,10 @@ resource "google_firebase_hosting_custom_domain" "app" {
 # Subdomains verify via their CNAME instead, so they don't need the TXT.
 
 locals {
-  dns_enabled          = var.custom_domain != "" && var.dns_zone_name != ""
+  # Excludes k8s apps: they get their DNS A-record (host -> shared Gateway IP)
+  # from kubernetes.tf, so the Firebase/frontend records here must not also fire
+  # for the same host (an A + CNAME on one name is invalid).
+  dns_enabled          = var.custom_domain != "" && var.dns_zone_name != "" && !var.has_kubernetes
   cloudsql_instance_id = var.has_database && var.cloudsql_connection_name != "" ? split(":", var.cloudsql_connection_name)[2] : ""
   # Apex (e.g. flowbydeveaux.co.uk) → A records; subdomain → CNAME. domain_is_apex
   # is computed from the zone's dns_name upstream, so multi-part TLDs are correct.
