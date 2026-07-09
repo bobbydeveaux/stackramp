@@ -76,3 +76,18 @@ resource "google_secret_manager_secret_version" "k8s_generated" {
   secret      = google_secret_manager_secret.k8s_generated[each.key].id
   secret_data = each.value
 }
+
+# DNS A-record: the app's host -> the shared Gateway's global IP. var.custom_domain
+# arrives already env-derived (dev => <app>.dev.<base>, prod => <app>.<base>; empty
+# for a truly-custom domain in dev), so this points exactly at what the chart's
+# HTTPRoute claims. The Gateway's wildcard cert already covers the host — no
+# per-app cert. Gated so ingress-free apps (no domain) create no record.
+resource "google_dns_record_set" "k8s_gateway_a" {
+  count        = var.has_kubernetes && var.custom_domain != "" && var.gke_gateway_ip != "" ? 1 : 0
+  name         = "${var.custom_domain}."
+  type         = "A"
+  ttl          = 300
+  managed_zone = var.dns_zone_name
+  project      = var.platform_project
+  rrdatas      = [var.gke_gateway_ip]
+}

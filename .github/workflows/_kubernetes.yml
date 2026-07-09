@@ -77,6 +77,16 @@ on:
         required: false
         default: ""
         description: "Secret Manager name prefix (<app>-<env>) the chart's ExternalSecret references."
+      gateway_name:
+        type: string
+        required: false
+        default: ""
+        description: "Shared GKE Gateway name the app's HTTPRoute attaches to (bootstrap output STACKRAMP_GKE_GATEWAY_NAME)."
+      gateway_namespace:
+        type: string
+        required: false
+        default: ""
+        description: "Namespace of the shared Gateway (STACKRAMP_GKE_GATEWAY_NAMESPACE)."
     outputs:
       release:
         description: "Installed Helm release name"
@@ -165,7 +175,15 @@ jobs:
           elif [ -n "$CUSTOM_DOMAIN" ] && [ "$ENV" = "prod" ]; then
             HOST="$CUSTOM_DOMAIN"
           fi
-          [ -n "$HOST" ] && HELM_ARGS+=(--set ingress.enabled=true --set ingress.domain="$HOST")
+          # Attach the app's HTTPRoute to the shared Gateway for the derived host.
+          if [ -n "$HOST" ] && [ -n "${{ inputs.gateway_name }}" ]; then
+            HELM_ARGS+=(
+              --set route.enabled=true
+              --set route.domain="$HOST"
+              --set route.gatewayName="${{ inputs.gateway_name }}"
+              --set route.gatewayNamespace="${{ inputs.gateway_namespace }}"
+            )
+          fi
           # Identifiers the platform terraform (A3) owns — injected here so the
           # chart never hardcodes them.
           [ -n "${{ inputs.cloudsql_sa_email }}" ] && HELM_ARGS+=(--set cloudsqlProxy.serviceAccount.gcpServiceAccount="${{ inputs.cloudsql_sa_email }}")
