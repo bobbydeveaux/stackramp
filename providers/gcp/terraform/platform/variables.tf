@@ -114,3 +114,9 @@ variable "kubernetes_namespace" {
   type        = string
   default     = ""
 }
+
+variable "gke_gateway_ip" {
+  description = "Global external IP of the shared GKE Gateway (bootstrap output / STACKRAMP_GKE_GATEWAY_IP). A k8s app's DNS A-record for its host points here so the Gateway's HTTPRoute serves it. Empty => no DNS record (ingress-free)."
+  type        = string
+  default     = ""
+}

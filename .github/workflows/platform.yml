@@ -307,7 +307,8 @@ jobs:
             -var=frontend_sa_email=${{ vars.STACKRAMP_FRONTEND_SA || '' }} \
             -var=has_mcp=${{ needs.parse-config.outputs.has_mcp == 'true' }} \
             -var=has_kubernetes=${{ needs.parse-config.outputs.has_kubernetes == 'true' }} \
-            -var=kubernetes_namespace=${{ needs.parse-config.outputs.kubernetes_namespace }}"
+            -var=kubernetes_namespace=${{ needs.parse-config.outputs.kubernetes_namespace }} \
+            -var=gke_gateway_ip=${{ vars.STACKRAMP_GKE_GATEWAY_IP }}"
 
           terraform apply -auto-approve $TF_VARS -var="buckets_json=${BUCKETS_JSON:-[]}"
 
@@ -363,7 +364,8 @@ jobs:
             -var=frontend_sa_email=${{ vars.STACKRAMP_FRONTEND_SA || '' }} \
             -var=has_mcp=${{ needs.parse-config.outputs.has_mcp == 'true' }} \
             -var=has_kubernetes=${{ needs.parse-config.outputs.has_kubernetes == 'true' }} \
-            -var=kubernetes_namespace=${{ needs.parse-config.outputs.kubernetes_namespace }}"
+            -var=kubernetes_namespace=${{ needs.parse-config.outputs.kubernetes_namespace }} \
+            -var=gke_gateway_ip=${{ vars.STACKRAMP_GKE_GATEWAY_IP }}"
 
           terraform apply -auto-approve $TF_VARS -var="buckets_json=${BUCKETS_JSON:-[]}"
 
@@ -505,6 +507,8 @@ jobs:
       cloudsql_sa_email: ${{ needs.provision.outputs.k8s_cloudsql_sa_email_dev }}
       cloudsql_ksa: ${{ needs.provision.outputs.k8s_cloudsql_ksa_dev }}
       secret_prefix: ${{ needs.provision.outputs.k8s_secret_prefix_dev }}
+      gateway_name: ${{ vars.STACKRAMP_GKE_GATEWAY_NAME }}
+      gateway_namespace: ${{ vars.STACKRAMP_GKE_GATEWAY_NAMESPACE }}
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 4. Deploy to PROD (main branch only, after dev succeeds)
@@ -632,3 +636,5 @@ jobs:
       cloudsql_sa_email: ${{ needs.provision.outputs.k8s_cloudsql_sa_email_prod }}
       cloudsql_ksa: ${{ needs.provision.outputs.k8s_cloudsql_ksa_prod }}
       secret_prefix: ${{ needs.provision.outputs.k8s_secret_prefix_prod }}
+      gateway_name: ${{ vars.STACKRAMP_GKE_GATEWAY_NAME }}
+      gateway_namespace: ${{ vars.STACKRAMP_GKE_GATEWAY_NAMESPACE }}
