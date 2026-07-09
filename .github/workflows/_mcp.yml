@@ -162,8 +162,14 @@ jobs:
             --ingress=all
           )
           if [ "${{ inputs.public }}" = "true" ]; then
-            # Public MCP: reachable by OAuth clients (Claude Code); auth enforced in-app.
-            DEPLOY_FLAGS+=(--allow-unauthenticated)
+            # Public MCP: reachable client->server by external OAuth clients
+            # (Claude, claude.ai, Inspector); auth is enforced in-app via OAuth.
+            # Use --no-invoker-iam-check, NOT --allow-unauthenticated: the latter
+            # adds an allUsers IAM binding that the DomainRestrictedSharing org
+            # policy rejects. Disabling the invoker IAM check makes the endpoint
+            # reachable without any public IAM grant, so the org policy is
+            # untouched and the MCP server's own OAuth gates access.
+            DEPLOY_FLAGS+=(--no-invoker-iam-check)
           else
             DEPLOY_FLAGS+=(--no-allow-unauthenticated)
           fi
