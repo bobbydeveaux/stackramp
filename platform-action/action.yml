@@ -125,9 +125,6 @@ outputs:
   kubernetes_namespace:
     description: "Namespace the Helm release is installed into"
     value: ${{ steps.parse.outputs.kubernetes_namespace }}
-  kubernetes_domain:
-    description: "Ingress host for the k8s app (empty => no ingress)"
-    value: ${{ steps.parse.outputs.kubernetes_domain }}
   kubernetes_values:
     description: "Inline Helm value overrides (compact JSON)"
     value: ${{ steps.parse.outputs.kubernetes_values }}
@@ -348,7 +345,9 @@ runs:
         # per-app namespace on the shared GKE cluster (see _kubernetes.yml).
         K8S_CHART=$(yq '.kubernetes.chart // ""' "$CONFIG")
         K8S_NAMESPACE=$(yq '.kubernetes.namespace // "'"$APP_NAME"'"' "$CONFIG")
-        K8S_DOMAIN=$(yq '.kubernetes.domain // ""' "$CONFIG")
+        # No per-block domain: k8s apps use the top-level `domain:` (custom_domain
+        # output) with the same .dev. derivation as Cloud Run — computed per-env
+        # in _kubernetes.yml so there is one domain rule across all primitives.
         K8S_VALUES=$(yq -o=json -I=0 '.kubernetes.values // {}' "$CONFIG")
         K8S_IMAGES=$(yq -o=json -I=0 '[.kubernetes.images[]? | {"name": .name, "dockerfile": .dockerfile, "context": (.context // ".")}]' "$CONFIG")
         HAS_K8S="false"
@@ -402,7 +401,6 @@ runs:
         echo "has_kubernetes=$HAS_K8S" >> $GITHUB_OUTPUT
         echo "kubernetes_chart=$K8S_CHART" >> $GITHUB_OUTPUT
         echo "kubernetes_namespace=$K8S_NAMESPACE" >> $GITHUB_OUTPUT
-        echo "kubernetes_domain=$K8S_DOMAIN" >> $GITHUB_OUTPUT
         echo "kubernetes_values=$K8S_VALUES" >> $GITHUB_OUTPUT
         echo "kubernetes_images=$K8S_IMAGES" >> $GITHUB_OUTPUT
         echo "mcp_port=$MCP_PORT" >> $GITHUB_OUTPUT

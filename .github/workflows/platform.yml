@@ -204,6 +204,8 @@ jobs:
       k8s_cloudsql_ksa_prod: ${{ steps.tf-out-prod.outputs.k8s_cloudsql_ksa }}
       k8s_secret_prefix_dev: ${{ steps.tf-out-dev.outputs.k8s_secret_prefix }}
       k8s_secret_prefix_prod: ${{ steps.tf-out-prod.outputs.k8s_secret_prefix }}
+      k8s_namespace_dev: ${{ steps.tf-out-dev.outputs.k8s_namespace }}
+      k8s_namespace_prod: ${{ steps.tf-out-prod.outputs.k8s_namespace }}
       mcp_url_dev: ${{ steps.tf-out-dev.outputs.mcp_url }}
       mcp_url_prod: ${{ steps.tf-out-prod.outputs.mcp_url }}
     steps:
@@ -322,6 +324,7 @@ jobs:
           echo "k8s_cloudsql_sa_email=$(terraform output -raw k8s_cloudsql_sa_email 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "k8s_cloudsql_ksa=$(terraform output -raw k8s_cloudsql_ksa 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "k8s_secret_prefix=$(terraform output -raw k8s_secret_prefix 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          echo "k8s_namespace=$(terraform output -raw k8s_namespace 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "mcp_url=$(terraform output -raw mcp_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
 
       - name: Terraform init (prod)
@@ -378,6 +381,7 @@ jobs:
           echo "k8s_cloudsql_sa_email=$(terraform output -raw k8s_cloudsql_sa_email 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "k8s_cloudsql_ksa=$(terraform output -raw k8s_cloudsql_ksa 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "k8s_secret_prefix=$(terraform output -raw k8s_secret_prefix 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          echo "k8s_namespace=$(terraform output -raw k8s_namespace 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "mcp_url=$(terraform output -raw mcp_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
 
   # ─────────────────────────────────────────────────────────────────────────────
@@ -486,8 +490,9 @@ jobs:
     with:
       app_name: ${{ needs.parse-config.outputs.app_name }}
       chart: ${{ needs.parse-config.outputs.kubernetes_chart }}
-      namespace: ${{ needs.parse-config.outputs.kubernetes_namespace }}
-      domain: ${{ needs.parse-config.outputs.kubernetes_domain }}
+      namespace: ${{ needs.provision.outputs.k8s_namespace_dev }}
+      custom_domain: ${{ needs.parse-config.outputs.custom_domain }}
+      base_domain: ${{ vars.STACKRAMP_BASE_DOMAIN }}
       values_json: ${{ needs.parse-config.outputs.kubernetes_values }}
       images_json: ${{ needs.parse-config.outputs.kubernetes_images }}
       environment: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || 'dev' }}
@@ -612,8 +617,9 @@ jobs:
     with:
       app_name: ${{ needs.parse-config.outputs.app_name }}
       chart: ${{ needs.parse-config.outputs.kubernetes_chart }}
-      namespace: ${{ needs.parse-config.outputs.kubernetes_namespace }}
-      domain: ${{ needs.parse-config.outputs.kubernetes_domain }}
+      namespace: ${{ needs.provision.outputs.k8s_namespace_prod }}
+      custom_domain: ${{ needs.parse-config.outputs.custom_domain }}
+      base_domain: ${{ vars.STACKRAMP_BASE_DOMAIN }}
       values_json: ${{ needs.parse-config.outputs.kubernetes_values }}
       images_json: ${{ needs.parse-config.outputs.kubernetes_images }}
       environment: prod

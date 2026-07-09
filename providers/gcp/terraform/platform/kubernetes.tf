@@ -19,6 +19,13 @@ locals {
   # Secret Manager name prefix for this app+env; the chart's ExternalSecret
   # references <prefix>-<key>.
   k8s_secret_prefix = "${var.app_name}-${var.environment}"
+  # Namespace the app is Helm-installed into, env-suffixed so dev and prod
+  # co-exist on the SAME shared cluster (environments segregate by namespace,
+  # not by cluster — mirrors how the one Cloud SQL instance holds <db>-dev and
+  # <db>-prod, and how Cloud Run runs both envs in one project). The deploy job
+  # consumes this via the k8s_namespace output so helm -n and this WI binding
+  # never drift apart.
+  k8s_namespace = "${var.kubernetes_namespace}-${var.environment}"
   # Shared Cloud SQL client GSA — created ONCE at bootstrap (gke.tf) with
   # roles/cloudsql.client. Every k8s app's proxy WI-binds to it. Deterministic
   # name so this per-app terraform needn't cross into bootstrap state. Using a
@@ -35,7 +42,7 @@ resource "google_service_account_iam_member" "k8s_cloudsql_wi" {
   count              = var.has_kubernetes ? 1 : 0
   service_account_id = "projects/${var.platform_project}/serviceAccounts/${local.gke_cloudsql_sa_email}"
   role               = "roles/iam.workloadIdentityUser"
-  member             = "serviceAccount:${var.platform_project}.svc.id.goog[${var.kubernetes_namespace}/${local.k8s_cloudsql_ksa}]"
+  member             = "serviceAccount:${var.platform_project}.svc.id.goog[${local.k8s_namespace}/${local.k8s_cloudsql_ksa}]"
 }
 
 # Platform-generated app secrets → Secret Manager, for ESO to sync. No human
