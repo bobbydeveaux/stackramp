@@ -38,19 +38,21 @@ resource "google_compute_global_address" "gateway" {
 # managed cert issue + auto-renew independently of the LB — no waiting for the
 # Gateway to serve traffic first. One authorization per parent domain.
 resource "google_certificate_manager_dns_authorization" "dev" {
-  count    = local.gateway_enabled ? 1 : 0
-  name     = "stackramp-dns-auth-dev"
-  project  = local.platform_project
-  domain   = "dev.${var.base_domain}"
-  location = "global"
+  count      = local.gateway_enabled ? 1 : 0
+  name       = "stackramp-dns-auth-dev"
+  project    = local.platform_project
+  domain     = "dev.${var.base_domain}"
+  location   = "global"
+  depends_on = [google_project_service.apis]
 }
 
 resource "google_certificate_manager_dns_authorization" "root" {
-  count    = local.gateway_enabled ? 1 : 0
-  name     = "stackramp-dns-auth-root"
-  project  = local.platform_project
-  domain   = var.base_domain
-  location = "global"
+  count      = local.gateway_enabled ? 1 : 0
+  name       = "stackramp-dns-auth-root"
+  project    = local.platform_project
+  domain     = var.base_domain
+  location   = "global"
+  depends_on = [google_project_service.apis]
 }
 
 # The CNAME each authorization asks for, written into the platform DNS zone.
@@ -84,6 +86,7 @@ resource "google_certificate_manager_certificate" "wildcard_dev" {
     domains            = [local.wildcard_dev]
     dns_authorizations = [google_certificate_manager_dns_authorization.dev[0].id]
   }
+  depends_on = [google_project_service.apis]
 }
 
 resource "google_certificate_manager_certificate" "wildcard_root" {
@@ -95,14 +98,16 @@ resource "google_certificate_manager_certificate" "wildcard_root" {
     domains            = [local.wildcard_root]
     dns_authorizations = [google_certificate_manager_dns_authorization.root[0].id]
   }
+  depends_on = [google_project_service.apis]
 }
 
 # Cert map the Gateway references (via the networking.gke.io/certmap annotation);
 # entries pick the wildcard cert by SNI hostname.
 resource "google_certificate_manager_certificate_map" "gateway" {
-  count   = local.gateway_enabled ? 1 : 0
-  name    = "stackramp-gateway"
-  project = local.platform_project
+  count      = local.gateway_enabled ? 1 : 0
+  name       = "stackramp-gateway"
+  project    = local.platform_project
+  depends_on = [google_project_service.apis]
 }
 
 resource "google_certificate_manager_certificate_map_entry" "dev" {
