@@ -293,6 +293,13 @@ resource "google_cloud_run_v2_service" "mcp" {
   project             = var.platform_project
   deletion_protection = false
   iap_enabled         = false
+  # MCP servers are reached client->server by external MCP clients (Claude,
+  # claude.ai, Inspector) which then authenticate via the server's own OAuth.
+  # So the Cloud Run invoker IAM check must be OFF — otherwise a domain/SA
+  # invoker binding blocks the client before OAuth can even start. Codifies the
+  # `gcloud run services update --no-invoker-iam-check` step so terraform never
+  # reverts it as drift. The MCP server enforces OAuth; nothing is truly public.
+  invoker_iam_disabled = true
 
   template {
     containers {
