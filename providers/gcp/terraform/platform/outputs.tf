@@ -1,14 +1,16 @@
 output "site_id" {
-  description = "Firebase Hosting site ID (empty when sso=true)"
-  value       = var.has_sso ? "" : google_firebase_hosting_site.app[0].site_id
+  description = "Firebase Hosting site ID (empty when sso=true or the app has no Firebase frontend, e.g. a k8s app)"
+  value       = length(google_firebase_hosting_site.app) > 0 ? google_firebase_hosting_site.app[0].site_id : ""
 }
 
 output "frontend_url" {
-  description = "Frontend URL"
+  description = "Frontend URL (empty for k8s apps — they serve via the shared Gateway)"
   value = var.has_sso ? (
     var.custom_domain != "" ? "https://${var.custom_domain}" : google_cloud_run_v2_service.frontend_sso[0].uri
     ) : (
-    var.custom_domain != "" ? "https://${var.custom_domain}" : "https://${google_firebase_hosting_site.app[0].site_id}.web.app"
+    var.custom_domain != "" ? "https://${var.custom_domain}" : (
+      length(google_firebase_hosting_site.app) > 0 ? "https://${google_firebase_hosting_site.app[0].site_id}.web.app" : ""
+    )
   )
 }
 
