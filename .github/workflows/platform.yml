@@ -514,6 +514,8 @@ jobs:
       memory: ${{ matrix.svc.memory }}
       cpu: ${{ matrix.svc.cpu }}
       vpc_connector: ${{ vars.STACKRAMP_VPC_CONNECTOR || '' }}
+      cloudsql_connection_name: ${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }}
+      database_secret_name: ${{ needs.provision.outputs.database_secret_name_dev }}
       public: "true"
       service_accounts: ${{ matrix.svc.service_accounts }}
 
@@ -675,6 +677,8 @@ jobs:
       memory: ${{ matrix.svc.memory }}
       cpu: ${{ matrix.svc.cpu }}
       vpc_connector: ${{ vars.STACKRAMP_VPC_CONNECTOR || '' }}
+      cloudsql_connection_name: ${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }}
+      database_secret_name: ${{ needs.provision.outputs.database_secret_name_prod }}
       public: "true"
       service_accounts: ${{ matrix.svc.service_accounts }}
 
