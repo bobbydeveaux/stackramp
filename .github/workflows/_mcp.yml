@@ -70,6 +70,16 @@ on:
         required: false
         default: ""
         description: "Serverless VPC Access Connector. Required to reach an ingress=internal backend — egress is set to all-traffic so backend calls originate inside the VPC (same as the SSO frontend proxy)."
+      cloudsql_connection_name:
+        type: string
+        required: false
+        default: ""
+        description: "Cloud SQL instance connection name (project:region:instance). Set when the app has a database and this machine/ingest service needs direct DB access (e.g. a telemetry-ingest service that WRITES to the app DB)."
+      database_secret_name:
+        type: string
+        required: false
+        default: ""
+        description: "Secret Manager secret ID holding DATABASE_URL for this app. Mounted as DATABASE_URL when set — mirrors _backend.yml so a machine service can reach the same DB the backend does."
       public:
         type: string
         required: false
@@ -159,6 +169,11 @@ jobs:
             SECRET_NAME=$(basename "$SECRET_RESOURCE")
             SECRET_REFS="${SECRET_REFS:+$SECRET_REFS,}${SECRET_NAME}=${SECRET_NAME}:latest"
           done
+          # App DATABASE_URL (same secret _backend.yml mounts) — so an ingest/
+          # machine service can WRITE to the app DB the backend reads.
+          if [ -n "${{ inputs.database_secret_name }}" ]; then
+            SECRET_REFS="${SECRET_REFS:+$SECRET_REFS,}DATABASE_URL=${{ inputs.database_secret_name }}:latest"
+          fi
 
           DEPLOY_FLAGS=(
             --image="$IMAGE"
@@ -189,6 +204,7 @@ jobs:
           fi
           [ -n "$SECRET_REFS" ] && DEPLOY_FLAGS+=(--set-secrets="$SECRET_REFS")
           [ -n "${{ inputs.vpc_connector }}" ] && DEPLOY_FLAGS+=(--vpc-connector="${{ inputs.vpc_connector }}" --vpc-egress=all-traffic)
+          [ -n "${{ inputs.cloudsql_connection_name }}" ] && DEPLOY_FLAGS+=(--add-cloudsql-instances="${{ inputs.cloudsql_connection_name }}")
 
           gcloud run deploy "$SERVICE_NAME" "${DEPLOY_FLAGS[@]}"
 
