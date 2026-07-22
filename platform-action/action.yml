@@ -95,11 +95,8 @@ outputs:
   backends:
     description: "v2: normalised JSON array of ALL backend services (merged from .backend + .backends[] + .mcp/.sso sugar). Each: {name, language, dir, port, memory, cpu, min_instances, access, service_accounts}. Deduplicate builds by .dir."
     value: ${{ steps.parse.outputs.backends }}
-  primary_backend:
-    description: "v2: the single provisioned-path backend (name=='' or access iap/internal) as a JSON object, or '' if none. Drives the deploy-backend job (keeps the {app}-{env} name + IAP/Terraform wiring)."
-    value: ${{ steps.parse.outputs.primary_backend }}
   machine_backends:
-    description: "v2: JSON array of self-deploy backends (access machine/public), excluding the primary. Drives the matrixed deploy-machine job ({app}-{name}-{env}, gcloud --no-invoker-iam-check, no provisioning)."
+    description: "v2: JSON array of the NEW .backends[] entries with access machine/public. Drives the matrixed deploy-machine job ({app}-{name}-{env}, gcloud --no-invoker-iam-check, no provisioning). The legacy singular backend (deploy-backend) and mcp block (deploy-mcp) keep their own paths."
     value: ${{ steps.parse.outputs.machine_backends }}
   has_mcp:
     description: "Whether the app has an MCP server"
@@ -387,11 +384,14 @@ runs:
         #              like the old _mcp.yml ({app}-{name}-{env}), no provisioning.
         # ADDITIVE: legacy has_backend / has_mcp / mcp_* outputs are unchanged.
         BACKENDS="[]"
+        ARR="[]"
         if [ "$HAS_BACKEND" = "true" ]; then
           B_ACCESS=$(yq '.backend.access // ""' "$CONFIG")
           if [ -z "$B_ACCESS" ] || [ "$B_ACCESS" = "null" ]; then
             if [ "$BACKEND_SSO" = "true" ]; then B_ACCESS="iap"; else B_ACCESS="public"; fi
           fi
+          # access: iap ≡ sso: true — flow it through the existing IAP plumbing.
+          [ "$B_ACCESS" = "iap" ] && HAS_SSO="true"
           BACKENDS=$(jq -c --arg l "$BACKEND_LANG" --arg d "$BACKEND_DIR" --argjson p "$BACKEND_PORT" \
             --arg a "$B_ACCESS" --argjson m "$MIN_INSTANCES" \
             '. + [{name:"",language:$l,dir:$d,port:$p,memory:"512Mi",cpu:"1",min_instances:$m,access:$a,service_accounts:""}]' <<<"$BACKENDS")
@@ -408,21 +408,21 @@ runs:
           ARR=$(jq -c '[ .[] | .access = (if .access != "" then .access elif .sso then "iap" else "public" end) | del(.sso) ]' <<<"$ARR")
           BACKENDS=$(jq -c '.[0] + .[1]' <<<"[$BACKENDS,$ARR]")
         fi
+        # mcp sugar joins the informational `backends` view, but keeps its own
+        # (Terraform-provisioned) deploy path — so it is NOT in machine_backends.
         if [ "$HAS_MCP" = "true" ]; then
           if [ -n "$MCP_SERVICE_ACCOUNTS" ]; then M_ACCESS="machine"; else M_ACCESS="public"; fi
           BACKENDS=$(jq -c --arg l "$MCP_LANG" --arg d "$MCP_DIR" --argjson p "$MCP_PORT" \
             --arg mem "$MCP_MEMORY" --arg cpu "$MCP_CPU" --arg a "$M_ACCESS" --arg sa "$MCP_SERVICE_ACCOUNTS" \
             '. + [{name:"mcp",language:$l,dir:$d,port:$p,memory:$mem,cpu:$cpu,min_instances:0,access:$a,service_accounts:$sa}]' <<<"$BACKENDS")
         fi
-        # dispatch split (primary provisioned vs machine self-deploy)
-        PRIMARY=$(jq -c 'map(select(.name=="")) + map(select(.access=="iap" or .access=="internal")) | (.[0] // {})' <<<"$BACKENDS")
-        PRIMARY_NAME=$(jq -r '.name // "__none__"' <<<"$PRIMARY")
-        [ "$PRIMARY" = "{}" ] && PRIMARY=""
-        MACHINE=$(jq -c --arg pn "$PRIMARY_NAME" '[ .[] | select((.access=="machine" or .access=="public") and .name != $pn) ]' <<<"$BACKENDS")
+        # machine_backends = the NEW .backends[] machine/public entries only
+        # (the legacy singular backend keeps deploy-backend; the mcp block keeps
+        # deploy-mcp — so existing services are untouched, zero orphan risk).
+        MACHINE=$(jq -c '[ .[] | select(.access=="machine" or .access=="public") ]' <<<"$ARR")
 
         echo "app_name=$APP_NAME" >> $GITHUB_OUTPUT
         echo "backends=$BACKENDS" >> $GITHUB_OUTPUT
-        echo "primary_backend=$PRIMARY" >> $GITHUB_OUTPUT
         echo "machine_backends=$MACHINE" >> $GITHUB_OUTPUT
         echo "has_frontend=$HAS_FRONTEND" >> $GITHUB_OUTPUT
         echo "frontend_framework=$FRONTEND_FRAMEWORK" >> $GITHUB_OUTPUT
