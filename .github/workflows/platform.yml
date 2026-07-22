@@ -84,6 +84,7 @@ jobs:
       mcp_public: ${{ steps.config.outputs.mcp_public }}
       mcp_service_accounts: ${{ steps.config.outputs.mcp_service_accounts }}
       mcp_changed: ${{ steps.changes.outputs.mcp }}
+      machine_backends: ${{ steps.config.outputs.machine_backends }}
       has_kubernetes: ${{ steps.config.outputs.has_kubernetes }}
       kubernetes_chart: ${{ steps.config.outputs.kubernetes_chart }}
       kubernetes_namespace: ${{ steps.config.outputs.kubernetes_namespace }}
@@ -480,6 +481,42 @@ jobs:
       public: ${{ needs.parse-config.outputs.mcp_public }}
       extra_env_vars: ${{ needs.parse-config.outputs.mcp_service_accounts != '' && format('MCP_SERVICE_ACCOUNTS={0}', needs.parse-config.outputs.mcp_service_accounts) || '' }}
 
+  # v2 access model: self-deploy machine/public backends declared in
+  # `backends: []` (no Terraform provisioning). Matrixed — one Cloud Run
+  # service per entry, {app}-{name}-{env}, via the same lean deploy path the
+  # mcp block uses. The legacy singular backend (deploy-backend) and mcp block
+  # (deploy-mcp) are untouched.
+  deploy-machine:
+    name: Machine backend
+    needs: [parse-config, provision]
+    if: |
+      needs.provision.result == 'success' &&
+      needs.parse-config.outputs.machine_backends != '[]' &&
+      (needs.parse-config.outputs.backend_changed == 'true' || needs.parse-config.outputs.mcp_changed == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request')
+    strategy:
+      matrix:
+        svc: ${{ fromJson(needs.parse-config.outputs.machine_backends) }}
+    uses: bobbydeveaux/stackramp/.github/workflows/_mcp.yml@main
+    secrets: inherit
+    with:
+      app_name: ${{ needs.parse-config.outputs.app_name }}
+      name: ${{ matrix.svc.name }}
+      mcp_dir: ${{ matrix.svc.dir }}
+      mcp_language: ${{ matrix.svc.language }}
+      mcp_port: ${{ matrix.svc.port }}
+      environment: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || 'dev' }}
+      platform_project: ${{ vars.STACKRAMP_PROJECT }}
+      region: ${{ vars.STACKRAMP_REGION || 'europe-west1' }}
+      wif_provider: ${{ vars.STACKRAMP_WIF_PROVIDER }}
+      service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
+      frontend_url: ${{ needs.provision.outputs.frontend_url_dev }}
+      backend_url: ${{ needs.provision.outputs.backend_url_dev }}
+      memory: ${{ matrix.svc.memory }}
+      cpu: ${{ matrix.svc.cpu }}
+      vpc_connector: ${{ vars.STACKRAMP_VPC_CONNECTOR || '' }}
+      public: "true"
+      service_accounts: ${{ matrix.svc.service_accounts }}
+
   deploy-kubernetes:
     name: Kubernetes app
     needs: [parse-config, provision]
@@ -607,6 +644,39 @@ jobs:
       vpc_connector: ${{ vars.STACKRAMP_VPC_CONNECTOR || '' }}
       public: ${{ needs.parse-config.outputs.mcp_public }}
       extra_env_vars: ${{ needs.parse-config.outputs.mcp_service_accounts != '' && format('MCP_SERVICE_ACCOUNTS={0}', needs.parse-config.outputs.mcp_service_accounts) || '' }}
+
+  deploy-machine-prod:
+    name: Machine backend → prod
+    needs: [parse-config, provision, deploy-machine]
+    if: |
+      always() &&
+      github.ref == 'refs/heads/main' && github.event_name == 'push' &&
+      needs.provision.result == 'success' &&
+      needs.parse-config.outputs.machine_backends != '[]' &&
+      (needs.deploy-machine.result == 'success' || needs.deploy-machine.result == 'skipped')
+    strategy:
+      matrix:
+        svc: ${{ fromJson(needs.parse-config.outputs.machine_backends) }}
+    uses: bobbydeveaux/stackramp/.github/workflows/_mcp.yml@main
+    secrets: inherit
+    with:
+      app_name: ${{ needs.parse-config.outputs.app_name }}
+      name: ${{ matrix.svc.name }}
+      mcp_dir: ${{ matrix.svc.dir }}
+      mcp_language: ${{ matrix.svc.language }}
+      mcp_port: ${{ matrix.svc.port }}
+      environment: prod
+      platform_project: ${{ vars.STACKRAMP_PROJECT }}
+      region: ${{ vars.STACKRAMP_REGION || 'europe-west1' }}
+      wif_provider: ${{ vars.STACKRAMP_WIF_PROVIDER }}
+      service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
+      frontend_url: ${{ needs.provision.outputs.frontend_url_prod }}
+      backend_url: ${{ needs.provision.outputs.backend_url_prod }}
+      memory: ${{ matrix.svc.memory }}
+      cpu: ${{ matrix.svc.cpu }}
+      vpc_connector: ${{ vars.STACKRAMP_VPC_CONNECTOR || '' }}
+      public: "true"
+      service_accounts: ${{ matrix.svc.service_accounts }}
 
   deploy-kubernetes-prod:
     name: Kubernetes app → prod
