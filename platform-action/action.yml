@@ -92,6 +92,12 @@ outputs:
   quality_fail_on_gate:
     description: "Whether to fail on quality gate breaches"
     value: ${{ steps.parse.outputs.quality_fail_on_gate }}
+  backends:
+    description: "v2: normalised JSON array of ALL backend services (merged from .backend + .backends[] + .mcp/.sso sugar). Each: {name, language, dir, port, memory, cpu, min_instances, access, service_accounts}. Deduplicate builds by .dir."
+    value: ${{ steps.parse.outputs.backends }}
+  machine_backends:
+    description: "v2: JSON array of the NEW .backends[] entries with access machine/public. Drives the matrixed deploy-machine job ({app}-{name}-{env}, gcloud --no-invoker-iam-check, no provisioning). The legacy singular backend (deploy-backend) and mcp block (deploy-mcp) keep their own paths."
+    value: ${{ steps.parse.outputs.machine_backends }}
   has_mcp:
     description: "Whether the app has an MCP server"
     value: ${{ steps.parse.outputs.has_mcp }}
@@ -367,7 +373,57 @@ runs:
         QUALITY_FAIL=$(yq '.quality.fail_on_gate' "$CONFIG")
         [ "$QUALITY_FAIL" = "null" ] && QUALITY_FAIL="true"
 
+        # ── v2 access model: normalise services → backends[] + dispatch split ──
+        # MERGE all sources into one backends[]: the legacy singular .backend
+        # (primary, name=""), then .backends[], then the .mcp sugar (name="mcp").
+        # Access resolved: explicit > sso→iap > public; mcp→machine when it
+        # carries an allow-list, else public. Then split for dispatch:
+        #   PRIMARY  = the provisioned path (name=="" OR access iap/internal) —
+        #              keeps the {app}-{env} service name + Terraform/IAP wiring.
+        #   MACHINE  = the self-deploy path (access machine/public), gcloud-deployed
+        #              like the old _mcp.yml ({app}-{name}-{env}), no provisioning.
+        # ADDITIVE: legacy has_backend / has_mcp / mcp_* outputs are unchanged.
+        BACKENDS="[]"
+        ARR="[]"
+        if [ "$HAS_BACKEND" = "true" ]; then
+          B_ACCESS=$(yq '.backend.access // ""' "$CONFIG")
+          if [ -z "$B_ACCESS" ] || [ "$B_ACCESS" = "null" ]; then
+            if [ "$BACKEND_SSO" = "true" ]; then B_ACCESS="iap"; else B_ACCESS="public"; fi
+          fi
+          # access: iap ≡ sso: true — flow it through the existing IAP plumbing.
+          [ "$B_ACCESS" = "iap" ] && HAS_SSO="true"
+          BACKENDS=$(jq -c --arg l "$BACKEND_LANG" --arg d "$BACKEND_DIR" --argjson p "$BACKEND_PORT" \
+            --arg a "$B_ACCESS" --argjson m "$MIN_INSTANCES" \
+            '. + [{name:"",language:$l,dir:$d,port:$p,memory:"512Mi",cpu:"1",min_instances:$m,access:$a,service_accounts:""}]' <<<"$BACKENDS")
+        fi
+        BACKENDS_LEN=$(yq '.backends | length' "$CONFIG" 2>/dev/null || echo 0)
+        { [ -z "$BACKENDS_LEN" ] || [ "$BACKENDS_LEN" = "null" ]; } && BACKENDS_LEN=0
+        if [ "$BACKENDS_LEN" -gt 0 ]; then
+          ARR=$(yq -o=json -I=0 '[ .backends[] | {
+            "name": (.name // ""), "language": (.language // "none"), "dir": (.dir // "backend"),
+            "port": (.port // 8080), "memory": (.memory // "512Mi"), "cpu": (.cpu // "1"),
+            "min_instances": (.min_instances // 0), "access": (.access // ""), "sso": (.sso // false),
+            "service_accounts": ((.allowed_service_accounts // []) | join(";")) } ]' "$CONFIG")
+          # yq has no if/then/else — resolve the access default in jq.
+          ARR=$(jq -c '[ .[] | .access = (if .access != "" then .access elif .sso then "iap" else "public" end) | del(.sso) ]' <<<"$ARR")
+          BACKENDS=$(jq -c '.[0] + .[1]' <<<"[$BACKENDS,$ARR]")
+        fi
+        # mcp sugar joins the informational `backends` view, but keeps its own
+        # (Terraform-provisioned) deploy path — so it is NOT in machine_backends.
+        if [ "$HAS_MCP" = "true" ]; then
+          if [ -n "$MCP_SERVICE_ACCOUNTS" ]; then M_ACCESS="machine"; else M_ACCESS="public"; fi
+          BACKENDS=$(jq -c --arg l "$MCP_LANG" --arg d "$MCP_DIR" --argjson p "$MCP_PORT" \
+            --arg mem "$MCP_MEMORY" --arg cpu "$MCP_CPU" --arg a "$M_ACCESS" --arg sa "$MCP_SERVICE_ACCOUNTS" \
+            '. + [{name:"mcp",language:$l,dir:$d,port:$p,memory:$mem,cpu:$cpu,min_instances:0,access:$a,service_accounts:$sa}]' <<<"$BACKENDS")
+        fi
+        # machine_backends = the NEW .backends[] machine/public entries only
+        # (the legacy singular backend keeps deploy-backend; the mcp block keeps
+        # deploy-mcp — so existing services are untouched, zero orphan risk).
+        MACHINE=$(jq -c '[ .[] | select(.access=="machine" or .access=="public") ]' <<<"$ARR")
+
         echo "app_name=$APP_NAME" >> $GITHUB_OUTPUT
+        echo "backends=$BACKENDS" >> $GITHUB_OUTPUT
+        echo "machine_backends=$MACHINE" >> $GITHUB_OUTPUT
         echo "has_frontend=$HAS_FRONTEND" >> $GITHUB_OUTPUT
         echo "frontend_framework=$FRONTEND_FRAMEWORK" >> $GITHUB_OUTPUT
         echo "frontend_dir=$FRONTEND_DIR" >> $GITHUB_OUTPUT

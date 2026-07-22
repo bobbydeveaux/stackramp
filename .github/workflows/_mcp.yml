@@ -6,6 +6,16 @@ on:
       app_name:
         type: string
         required: true
+      name:
+        type: string
+        required: false
+        default: "mcp"
+        description: "Service-name suffix — deploys as {app}-{name}-{env}. Defaults to 'mcp' (unchanged for the legacy mcp: block); v2 machine backends pass their own name (e.g. 'ingest')."
+      service_accounts:
+        type: string
+        required: false
+        default: ""
+        description: "Semicolon-joined SA emails allow-listed to call this service with Google-signed ID tokens. Injected as BOTH STACKRAMP_SERVICE_ACCOUNTS and (for posterity) MCP_SERVICE_ACCOUNTS."
       mcp_dir:
         type: string
         required: true
@@ -129,12 +139,16 @@ jobs:
 
       - name: Deploy to Cloud Run
         run: |
-          SERVICE_NAME="${{ inputs.app_name }}-mcp-${{ inputs.environment }}"
+          SERVICE_NAME="${{ inputs.app_name }}-${{ inputs.name }}-${{ inputs.environment }}"
 
           ENV_VARS="ENVIRONMENT=${{ inputs.environment }},APP_NAME=${{ inputs.app_name }}"
           [ -n "${{ inputs.frontend_url }}" ] && ENV_VARS="${ENV_VARS},FRONTEND_URL=${{ inputs.frontend_url }}"
           [ -n "${{ inputs.backend_url }}" ]  && ENV_VARS="${ENV_VARS},BACKEND_URL=${{ inputs.backend_url }}"
           [ -n "${{ inputs.extra_env_vars }}" ] && ENV_VARS="${ENV_VARS},${{ inputs.extra_env_vars }}"
+          # Machine allow-list: inject under the v2 name AND the legacy name.
+          if [ -n "${{ inputs.service_accounts }}" ]; then
+            ENV_VARS="${ENV_VARS},STACKRAMP_SERVICE_ACCOUNTS=${{ inputs.service_accounts }},MCP_SERVICE_ACCOUNTS=${{ inputs.service_accounts }}"
+          fi
 
           SECRET_REFS=""
           PLATFORM_SECRETS=$(gcloud secrets list \
@@ -181,7 +195,7 @@ jobs:
       - name: Grant domain invoker on MCP service
         if: inputs.iap_allowed_domain != '' && inputs.public != 'true'
         run: |
-          SERVICE_NAME="${{ inputs.app_name }}-mcp-${{ inputs.environment }}"
+          SERVICE_NAME="${{ inputs.app_name }}-${{ inputs.name }}-${{ inputs.environment }}"
           IFS=',' read -ra DOMAINS <<< "${{ inputs.iap_allowed_domain }}"
           for DOMAIN in "${DOMAINS[@]}"; do
             DOMAIN=$(echo "$DOMAIN" | xargs)
@@ -197,7 +211,7 @@ jobs:
       - name: Get deployed URL
         id: url
         run: |
-          SERVICE_NAME="${{ inputs.app_name }}-mcp-${{ inputs.environment }}"
+          SERVICE_NAME="${{ inputs.app_name }}-${{ inputs.name }}-${{ inputs.environment }}"
           URL=$(gcloud run services describe "$SERVICE_NAME" \
             --region=${{ inputs.region }} \
             --project=${{ inputs.platform_project }} \
