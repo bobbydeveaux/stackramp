@@ -218,3 +218,20 @@ jobs:
             --format="value(status.url)")
           echo "url=$URL" >> $GITHUB_OUTPUT
           echo "MCP server deployed: $URL"
+
+          # Inject SERVICE_URL = the service's own Cloud Run URL. A machine
+          # service needs its own URL as the expected OIDC `aud` when verifying
+          # caller ID tokens (StackRamp access: machine), and as the issuer for
+          # in-app OAuth discovery. The URL isn't known until first deploy, so
+          # set it here (idempotent; skipped when already correct to avoid a
+          # needless revision).
+          CURRENT=$(gcloud run services describe "$SERVICE_NAME" \
+            --region=${{ inputs.region }} --project=${{ inputs.platform_project }} \
+            --format=json 2>/dev/null \
+            | jq -r '.spec.template.spec.containers[0].env[]? | select(.name=="SERVICE_URL") | .value' 2>/dev/null || true)
+          if [ "$CURRENT" != "$URL" ]; then
+            echo "Setting SERVICE_URL=$URL on $SERVICE_NAME"
+            gcloud run services update "$SERVICE_NAME" \
+              --region=${{ inputs.region }} --project=${{ inputs.platform_project }} \
+              --update-env-vars="SERVICE_URL=$URL" --quiet
+          fi
