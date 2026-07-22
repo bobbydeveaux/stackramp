@@ -69,7 +69,49 @@
         "public": {
           "type": "boolean",
           "default": false,
-          "description": "Deploy with --allow-unauthenticated (allUsers invoker) so MCP OAuth discovery is reachable by clients like Claude Code. Requires an org policy that permits allUsers; auth is then enforced in-app (bearer tokens via the MCP OAuth flow)."
+          "description": "DEPRECATED (v2): use `access: public`. Deploy reachable without an allUsers binding; auth enforced in-app."
+        },
+        "access": {
+          "type": "string",
+          "enum": ["iap", "machine", "public", "internal"],
+          "description": "v2 access posture. iap = humans via Google IAP (was sso:true). machine = service accounts via Google-signed ID tokens + allowed_service_accounts (was the mcp SA path). public = reachable, app does its own OAuth/none (--no-invoker-iam-check). internal = service-to-service only (VPC). Omitted ⇒ iap when sso:true, else public (legacy backend default)."
+        },
+        "allowed_service_accounts": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "For access: machine — SA emails allowed to call this backend with Google-signed ID tokens. Injected as STACKRAMP_SERVICE_ACCOUNTS (and MCP_SERVICE_ACCOUNTS for posterity), semicolon-joined."
+        }
+      }
+    },
+    "backends": {
+      "type": "array",
+      "description": "v2: one or more backend services for this app, each with its own access posture. The singular `backend:` (and `mcp:`) still work and are normalised into this array. Two entries sharing a `dir` build ONE image and deploy it twice (build once, expose many).",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$",
+            "description": "Service name suffix — deploys as {app}-{name}-{env}. Required (disambiguates the multiple services)."
+          },
+          "language": { "type": "string", "enum": ["python", "go", "node", "rust"], "default": "go" },
+          "dir": { "type": "string", "default": "backend", "description": "Source dir. Two backends with the same dir build one shared image." },
+          "port": { "type": "integer", "default": 8080 },
+          "memory": { "type": "string", "default": "512Mi" },
+          "cpu": { "type": "string", "default": "1" },
+          "min_instances": { "type": "integer", "default": 0 },
+          "access": {
+            "type": "string",
+            "enum": ["iap", "machine", "public", "internal"],
+            "description": "Access posture (see backend.access). Omitted ⇒ iap when sso:true on the entry, else public."
+          },
+          "sso": { "type": "boolean", "default": false, "description": "Sugar for access: iap." },
+          "allowed_service_accounts": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "For access: machine — allow-listed SA emails."
+          }
         }
       }
     },
@@ -183,7 +225,7 @@
     },
     "mcp": {
       "type": "object",
-      "description": "MCP (Model Context Protocol) server. Deployed as a separate Cloud Run service with domain-restricted invoker \u2014 no IAP, no allUsers.",
+      "description": "MCP (Model Context Protocol) server. v2: SUGAR for a `backends` entry with access: machine (retained; prefer `backends:` for new apps). Deployed as a separate Cloud Run service with domain-restricted invoker \u2014 no IAP, no allUsers.",
       "properties": {
         "language": {
           "type": "string",
