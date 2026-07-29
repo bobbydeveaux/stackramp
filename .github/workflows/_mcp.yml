@@ -129,7 +129,7 @@ jobs:
 
       - name: Build Docker image
         run: |
-          IMAGE="${{ inputs.region }}-docker.pkg.dev/${{ inputs.platform_project }}/stackramp-images/${{ inputs.app_name }}-mcp:${{ github.sha }}"
+          IMAGE="${{ inputs.region }}-docker.pkg.dev/${{ inputs.platform_project }}/stackramp-images/${{ inputs.app_name }}-${{ inputs.name }}:${{ github.sha }}"
 
           if [ -f "${{ inputs.mcp_dir }}/Dockerfile" ]; then
             echo "Using custom Dockerfile from ${{ inputs.mcp_dir }}/Dockerfile"
