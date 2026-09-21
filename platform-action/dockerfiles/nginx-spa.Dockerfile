@@ -5,6 +5,14 @@ FROM nginx:alpine
 
 ARG BACKEND_URL=""
 
+# The stock entrypoint hook 10-listen-on-ipv6-by-default.sh runs `apk manifest nginx`
+# at container start. Since apk-tools 3.0.8 (nginx:alpine from 2026-09-18) that
+# read-only call downloads the package index over the network. On Cloud Run with
+# --vpc-egress=all-traffic and no NAT it hangs, the container never binds :8080 and
+# the startup probe fails. We write our own default.conf below, so the hook has
+# nothing to do anyway — drop it.
+RUN rm -f /docker-entrypoint.d/10-listen-on-ipv6-by-default.sh
+
 COPY dist /usr/share/nginx/html
 
 # Generate nginx config — with optional /api reverse proxy
