@@ -101,6 +101,9 @@
           "memory": { "type": "string", "default": "512Mi" },
           "cpu": { "type": "string", "default": "1" },
           "min_instances": { "type": "integer", "default": 0 },
+          "max_instances": { "type": "integer", "default": 10, "description": "Most Cloud Run instances. Set 1 for a service that keeps state in memory (a WebSocket hub, a stream fan-out)." },
+          "always_on": { "type": "boolean", "default": false, "description": "CPU stays allocated between requests and at least one instance stays up. For services that hold long-lived connections or do work outside request handling. Costs an instance around the clock." },
+          "timeout": { "type": "integer", "default": 300, "description": "Request timeout in seconds, up to Cloud Run's 3600. Long-lived WebSocket connections live at most this long before the client must reconnect." },
           "access": {
             "type": "string",
             "enum": ["iap", "machine", "public", "internal"],

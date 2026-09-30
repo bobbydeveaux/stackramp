@@ -513,6 +513,10 @@ jobs:
       backend_url: ${{ needs.provision.outputs.backend_url_dev }}
       memory: ${{ matrix.svc.memory }}
       cpu: ${{ matrix.svc.cpu }}
+      min_instances: ${{ matrix.svc.min_instances }}
+      max_instances: ${{ matrix.svc.max_instances }}
+      always_on: ${{ matrix.svc.always_on }}
+      timeout: ${{ matrix.svc.timeout }}
       vpc_connector: ${{ vars.STACKRAMP_VPC_CONNECTOR || '' }}
       cloudsql_connection_name: ${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }}
       database_secret_name: ${{ needs.provision.outputs.database_secret_name_dev }}
@@ -676,6 +680,10 @@ jobs:
       backend_url: ${{ needs.provision.outputs.backend_url_prod }}
       memory: ${{ matrix.svc.memory }}
       cpu: ${{ matrix.svc.cpu }}
+      min_instances: ${{ matrix.svc.min_instances }}
+      max_instances: ${{ matrix.svc.max_instances }}
+      always_on: ${{ matrix.svc.always_on }}
+      timeout: ${{ matrix.svc.timeout }}
       vpc_connector: ${{ vars.STACKRAMP_VPC_CONNECTOR || '' }}
       cloudsql_connection_name: ${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }}
       database_secret_name: ${{ needs.provision.outputs.database_secret_name_prod }}
