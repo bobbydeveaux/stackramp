@@ -124,6 +124,25 @@ Because both backends declare `dir: backend`, StackRamp builds that image
 
 ---
 
+#### Per-backend scaling (additive, 2026-09-30)
+
+A `backends[]` entry may also say:
+
+```yaml
+backends:
+  - name: stream
+    dir: hub
+    access: public
+    always_on: true      # CPU allocated between requests, one instance always up
+    max_instances: 1     # state lives in memory: never fan out
+    timeout: 3600        # Cloud Run's ceiling; WebSocket clients reconnect at it
+```
+
+`min_instances` was already accepted but not honoured on this path; it is now.
+Defaults are unchanged for everyone who does not set these: scale to zero, ten
+instances, five minutes, CPU throttled.
+
+
 ## Build once, expose many
 
 The single most important v2 property, and the answer to *"do we build the same

@@ -52,6 +52,24 @@ on:
         type: string
         required: false
         default: "1"
+      min_instances:
+        type: number
+        required: false
+        default: 0
+      max_instances:
+        type: number
+        required: false
+        default: 10
+      always_on:
+        description: "CPU always allocated; at least one instance kept up. For long-lived connections."
+        type: boolean
+        required: false
+        default: false
+      timeout:
+        description: "Request timeout in seconds (Cloud Run allows up to 3600)."
+        type: number
+        required: false
+        default: 300
       frontend_url:
         type: string
         required: false
@@ -175,6 +193,15 @@ jobs:
             SECRET_REFS="${SECRET_REFS:+$SECRET_REFS,}DATABASE_URL=${{ inputs.database_secret_name }}:latest"
           fi
 
+          # always_on: CPU stays allocated between requests (work outside a
+          # request, long-lived sockets) and one instance is always up.
+          MIN_INSTANCES="${{ inputs.min_instances }}"
+          CPU_FLAG="--cpu-throttling"
+          if [ "${{ inputs.always_on }}" = "true" ]; then
+            CPU_FLAG="--no-cpu-throttling"
+            [ "$MIN_INSTANCES" -lt 1 ] && MIN_INSTANCES=1
+          fi
+
           DEPLOY_FLAGS=(
             --image="$IMAGE"
             --region="${{ inputs.region }}"
@@ -183,10 +210,10 @@ jobs:
             --set-env-vars="${ENV_VARS}"
             --memory="${{ inputs.memory }}"
             --cpu="${{ inputs.cpu }}"
-            --min-instances=0
-            --max-instances=10
-            --timeout=300
-            --cpu-throttling
+            --min-instances="$MIN_INSTANCES"
+            --max-instances="${{ inputs.max_instances }}"
+            --timeout="${{ inputs.timeout }}"
+            "$CPU_FLAG"
             --project="${{ inputs.platform_project }}"
             --ingress=all
           )
