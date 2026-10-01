@@ -55,12 +55,12 @@ on:
         type: string
         required: false
         default: ""
+        description: "Custom domain for the app — used as the output URL when sso=true."
       proxy_paths:
         description: "Extra site paths rewritten to the backend besides /api/**, ;-separated Firebase globs"
         type: string
         required: false
         default: ""
-        description: "Custom domain for the app — used as the output URL when sso=true."
       vpc_connector:
         type: string
         required: false
