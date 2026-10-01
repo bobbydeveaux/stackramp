@@ -49,6 +49,7 @@ jobs:
       has_backend: ${{ steps.config.outputs.has_backend }}
       frontend_dir: ${{ steps.config.outputs.frontend_dir }}
       frontend_framework: ${{ steps.config.outputs.frontend_framework }}
+      frontend_proxy_paths: ${{ steps.config.outputs.frontend_proxy_paths }}
       backend_dir: ${{ steps.config.outputs.backend_dir }}
       backend_language: ${{ steps.config.outputs.backend_language }}
       backend_port: ${{ steps.config.outputs.backend_port }}
@@ -405,6 +406,7 @@ jobs:
       app_name: ${{ needs.parse-config.outputs.app_name }}
       frontend_dir: ${{ needs.parse-config.outputs.frontend_dir }}
       frontend_framework: ${{ needs.parse-config.outputs.frontend_framework }}
+      proxy_paths: ${{ needs.parse-config.outputs.frontend_proxy_paths }}
       environment: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || 'dev' }}
       platform_project: ${{ vars.STACKRAMP_PROJECT }}
       region: ${{ vars.STACKRAMP_REGION || 'europe-west1' }}
@@ -572,6 +574,7 @@ jobs:
       app_name: ${{ needs.parse-config.outputs.app_name }}
       frontend_dir: ${{ needs.parse-config.outputs.frontend_dir }}
       frontend_framework: ${{ needs.parse-config.outputs.frontend_framework }}
+      proxy_paths: ${{ needs.parse-config.outputs.frontend_proxy_paths }}
       environment: prod
       platform_project: ${{ vars.STACKRAMP_PROJECT }}
       region: ${{ vars.STACKRAMP_REGION || 'europe-west1' }}

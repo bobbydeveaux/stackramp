@@ -33,6 +33,11 @@
         "node_version": {
           "type": "string",
           "default": "20"
+        },
+        "proxy_paths": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^/" },
+          "description": "Extra site paths rewritten to the backend service besides /api/** (Firebase Hosting glob syntax, e.g. \"/.well-known/**\", \"/mcp\"). Needs a backend."
         }
       }
     },

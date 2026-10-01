@@ -14,6 +14,9 @@ frontend:
   dir: frontend
   node_version: "20"
   sso: true          # optional — serve via Cloud Run + IAP (see SSO section)
+  proxy_paths:       # optional — extra site paths rewritten to the backend
+    - "/.well-known/**"   #   besides /api/** (Firebase globs; needs a backend)
+    - "/mcp"
 
 backend:
   language: python
