@@ -17,6 +17,9 @@ outputs:
   frontend_framework:
     description: "Frontend framework (react, vue, next, static, none)"
     value: ${{ steps.parse.outputs.frontend_framework }}
+  frontend_proxy_paths:
+    description: "Extra site paths proxied to the backend, ;-separated (frontend.proxy_paths)"
+    value: ${{ steps.parse.outputs.frontend_proxy_paths }}
   frontend_dir:
     description: "Frontend directory"
     value: ${{ steps.parse.outputs.frontend_dir }}
@@ -167,6 +170,9 @@ runs:
 
         FRONTEND_FRAMEWORK=$(yq '.frontend.framework // "none"' "$CONFIG")
         FRONTEND_DIR=$(yq '.frontend.dir // "frontend"' "$CONFIG")
+        # Extra site paths proxied to the backend besides /api/** (e.g.
+        # /.well-known/** for OAuth discovery, /mcp). Firebase glob syntax.
+        FRONTEND_PROXY_PATHS=$(yq '(.frontend.proxy_paths // []) | join(";")' "$CONFIG")
         BACKEND_LANG=$(yq '.backend.language // "none"' "$CONFIG")
         BACKEND_DIR=$(yq '.backend.dir // "backend"' "$CONFIG")
         BACKEND_PORT=$(yq '.backend.port // 8080' "$CONFIG")
@@ -429,6 +435,7 @@ runs:
         echo "has_frontend=$HAS_FRONTEND" >> $GITHUB_OUTPUT
         echo "frontend_framework=$FRONTEND_FRAMEWORK" >> $GITHUB_OUTPUT
         echo "frontend_dir=$FRONTEND_DIR" >> $GITHUB_OUTPUT
+        echo "frontend_proxy_paths=$FRONTEND_PROXY_PATHS" >> $GITHUB_OUTPUT
         echo "has_backend=$HAS_BACKEND" >> $GITHUB_OUTPUT
         echo "backend_language=$BACKEND_LANG" >> $GITHUB_OUTPUT
         echo "backend_dir=$BACKEND_DIR" >> $GITHUB_OUTPUT

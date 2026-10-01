@@ -55,6 +55,11 @@ on:
         type: string
         required: false
         default: ""
+      proxy_paths:
+        description: "Extra site paths rewritten to the backend besides /api/**, ;-separated Firebase globs"
+        type: string
+        required: false
+        default: ""
         description: "Custom domain for the app — used as the output URL when sso=true."
       vpc_connector:
         type: string
@@ -315,6 +320,16 @@ jobs:
           }
           EOF
             fi
+          fi
+          # Extra proxied paths (frontend.proxy_paths) go in FRONT of the
+          # generated rewrites, so they beat the SPA catch-all. Additive: no
+          # proxy_paths, no change to the file above.
+          if [ -n "${{ inputs.proxy_paths }}" ] && [ "${{ inputs.has_backend }}" = "true" ]; then
+            EXTRA=$(jq -cn --arg p "${{ inputs.proxy_paths }}" --arg s "$CLOUD_RUN_SERVICE" --arg r "${{ inputs.region }}" \
+              '[ $p | split(";")[] | select(length > 0) | { source: ., run: { serviceId: $s, region: $r } } ]')
+            jq --argjson e "$EXTRA" '.hosting.rewrites = ($e + .hosting.rewrites)' firebase.json > firebase.json.tmp \
+              && mv firebase.json.tmp firebase.json
+            echo "proxy_paths: $(jq -c '.hosting.rewrites' firebase.json)"
           fi
 
       - name: Deploy to live channel
