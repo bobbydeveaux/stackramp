@@ -1,8 +1,11 @@
 name: "Build image (GCP Artifact Registry)"
 description: >
   Build a service image once per commit and push it under one or more image
-  names. Skips the build when every image for this tag already exists (the
-  prod deploy reuses the image the dev deploy / pre-build job pushed). Uses
+  names. The tag is <commit sha>-<fingerprint of the platform build inputs>
+  (this action and the platform Dockerfile used; see fingerprint.sh), so a
+  platform change rebuilds even on an unchanged app commit. Skips the build
+  when every image for that tag already exists (the prod deploy reuses the
+  image the dev deploy / pre-build job pushed). Uses
   BuildKit with a registry layer cache in Artifact Registry, and pulls Docker
   Hub base images through mirror.gcr.io (avoids Docker Hub 429s). Expects the
   caller to have authenticated to Google Cloud already.
@@ -22,7 +25,7 @@ inputs:
     description: "Registry path, e.g. europe-west1-docker.pkg.dev/my-project/stackramp-images"
     required: true
   tag:
-    description: "Image tag (the commit SHA)"
+    description: "The commit SHA. The pushed tag is <tag>-<platform fingerprint>; use the image/tag outputs, not this value."
     required: true
   cache_mode:
     description: >
@@ -38,6 +41,9 @@ outputs:
   image:
     description: "Full ref of the first image (registry/name:tag)"
     value: ${{ steps.plan.outputs.image }}
+  tag:
+    description: "The tag actually pushed/reused: <commit sha>-<platform fingerprint>"
+    value: ${{ steps.tag.outputs.tag }}
   built:
     description: "true when this step built and pushed; false when the images already existed"
     value: ${{ steps.plan.outputs.build }}
@@ -45,13 +51,30 @@ outputs:
 runs:
   using: "composite"
   steps:
+    # Every caller (pre-build job, backend/MCP deploys, dev and prod) goes
+    # through here, so they all derive the same tag for the same commit and
+    # platform version; prod still finds the image dev pushed.
+    - name: Compute image tag
+      id: tag
+      shell: bash
+      env:
+        SHA: ${{ inputs.tag }}
+        CONTEXT: ${{ inputs.context }}
+        LANGUAGE: ${{ inputs.language }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        FP=$(bash "${ACTION_PATH}/fingerprint.sh" "$CONTEXT" "$LANGUAGE")
+        echo "Platform build fingerprint: $FP"
+        echo "tag=${SHA}-${FP}" >> "$GITHUB_OUTPUT"
+
     - name: Check for an existing image
       id: plan
       shell: bash
       env:
         REGISTRY: ${{ inputs.registry }}
         IMAGES: ${{ inputs.images }}
-        TAG: ${{ inputs.tag }}
+        TAG: ${{ steps.tag.outputs.tag }}
       run: |
         gcloud auth configure-docker "${REGISTRY%%/*}" --quiet >/dev/null 2>&1 || true
         FIRST=""; BUILD=false
@@ -67,7 +90,7 @@ runs:
         done
         echo "image=$FIRST" >> "$GITHUB_OUTPUT"
         echo "build=$BUILD" >> "$GITHUB_OUTPUT"
-        [ "$BUILD" = "false" ] && echo "Image for this commit already pushed — skipping the build."
+        [ "$BUILD" = "false" ] && echo "Image for this commit and platform version already pushed — skipping the build."
         exit 0
 
     # BuildKit in a container so the layer cache can be exported to the
@@ -90,7 +113,7 @@ runs:
       env:
         REGISTRY: ${{ inputs.registry }}
         IMAGES: ${{ inputs.images }}
-        TAG: ${{ inputs.tag }}
+        TAG: ${{ steps.tag.outputs.tag }}
         CONTEXT: ${{ inputs.context }}
         LANGUAGE: ${{ inputs.language }}
         CACHE_MODE: ${{ inputs.cache_mode }}
