@@ -24,6 +24,15 @@ inputs:
   tag:
     description: "Image tag (the commit SHA)"
     required: true
+  cache_mode:
+    description: >
+      BuildKit cache export mode. min (default) caches the final image's
+      layers, whose blobs are already in the repo, so export is cheap. max
+      also caches builder stages: worth it when a builder stage installs
+      slow dependencies (cargo, npm ci), not for a Go builder whose compile
+      can't be cached this way (measured: +20s export, no gain).
+    required: false
+    default: "min"
 
 outputs:
   image:
@@ -84,6 +93,7 @@ runs:
         TAG: ${{ inputs.tag }}
         CONTEXT: ${{ inputs.context }}
         LANGUAGE: ${{ inputs.language }}
+        CACHE_MODE: ${{ inputs.cache_mode }}
         BUILDX_OK: ${{ steps.buildx.outcome == 'success' }}
         PLATFORM_DOCKERFILES: ${{ github.action_path }}/../../../../platform-action/dockerfiles
       run: |
@@ -104,16 +114,15 @@ runs:
         CACHE="${REGISTRY}/${FIRST_NAME}:buildcache"
 
         if [ "$BUILDX_OK" = "true" ]; then
-          # One build, pushed under every name. mode=max caches every stage
-          # (e.g. go mod download in a builder stage), ignore-error keeps a
-          # cache hiccup from failing a deploy. provenance=false keeps a plain
+          # One build, pushed under every name. ignore-error keeps a cache
+          # hiccup from failing a deploy. provenance=false keeps a plain
           # single-platform image, as the classic builder produced.
           docker buildx build \
             "${TAGS[@]}" \
             -f "$DOCKERFILE" \
             --provenance=false \
             --cache-from "type=registry,ref=${CACHE}" \
-            --cache-to "type=registry,ref=${CACHE},mode=max,image-manifest=true,oci-mediatypes=true,ignore-error=true" \
+            --cache-to "type=registry,ref=${CACHE},mode=${CACHE_MODE},image-manifest=true,oci-mediatypes=true,ignore-error=true" \
             --push \
             "$CONTEXT"
         else
