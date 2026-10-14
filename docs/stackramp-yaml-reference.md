@@ -298,6 +298,90 @@ kubernetes:
 
 ---
 
+### `deploy` (optional) — what a push deploys
+
+Each push deploys only the services whose files changed:
+
+| Service | Deploys when a changed file matches |
+|---|---|
+| frontend | `frontend.dir/**`, `frontend.watch_paths` |
+| backend (API) | `backend.dir/**`, `backend.watch_paths` |
+| each `backends[]` entry | its `dir/**`, its `watch_paths` |
+| mcp | `mcp.dir/**`, `mcp.watch_paths` |
+| kubernetes | the chart dir, each image's context/dockerfile, `kubernetes.watch_paths` |
+
+Services that share a dir (for example an API and a worker built from the same
+`api/` dir) all deploy when it changes, from one image build.
+
+Files matching the ignore list never trigger a deploy, even inside a service
+dir. Built-in list: `*.md` (repo root), `**/README.md`, `**/CHANGELOG.md`,
+`LICENSE`, `docs/**`, `marketing/**`, `brand/**`, `.github/**`, `.claude/**`,
+`.vscode/**`, `.idea/**`. When nothing deployable changed, the run skips
+everything, including the security scan and the quality gate.
+
+**Everything deploys** on a manual run (`workflow_dispatch`), a scheduled run,
+the `deploy_all: true` workflow input, a branch's first push, when the change
+list can't be computed, and when `stackramp.yaml`, the calling workflow file or
+a `full_deploy_paths` glob changed.
+
+```yaml
+deploy:
+  ignore_paths: ["api/testdata/**", "**/*.test.ts"]  # added to the built-in list
+  default_ignore_paths: true    # false = use only ignore_paths
+  full_deploy_paths: ["shared/**", "package-lock.json"]
+
+backends:
+  - name: worker
+    dir: worker
+    watch_paths: ["proto/**"]   # also deploy the worker when proto/ changes
+```
+
+Globs: `*` stays within a path segment, `**` crosses segments, `{a,b}`
+alternates, paths are relative to the repo root.
+
+> **A dependency outside the service dir needs `watch_paths`.** The Docker build
+> context is the service dir, so normally nothing outside it can reach the
+> image. If your build does pull in files from elsewhere (a monorepo package, a
+> generated client), list them, or that service will keep running the old code
+> until its next deploy.
+
+**Infrastructure (Terraform)** runs only when its inputs changed: the job
+fingerprints every Terraform input (stackramp.yaml values, GitHub variables,
+the detected DNS zone and the platform's Terraform code) and compares it with
+the fingerprint stored after the last successful apply, in the state bucket
+next to the state. It also applies when `stackramp.yaml` changed, on scheduled
+runs, and when the `provision: true` workflow input (or a `workflow_dispatch`
+input named `provision`) is set. Otherwise it reads the outputs from the
+Terraform state in a few seconds. Platform-wide secrets (label
+`platform-inject=true`) are not Terraform inputs: each deploy lists and mounts
+them, so a new secret reaches a service on that service's next deploy (run the
+workflow manually to roll it out everywhere).
+
+Recommended caller setup (manual full deploy, forced provisioning, a weekly
+full deploy as a safety net):
+
+```yaml
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+  schedule:
+    - cron: "30 3 * * 1"        # Mondays 03:30 UTC: deploy everything
+  workflow_dispatch:
+    inputs:
+      provision:
+        description: "Run terraform apply even if nothing changed"
+        type: boolean
+        default: false
+```
+
+Dry run: call the workflow with `dry_run: true` to see the plan (which services
+would deploy, whether Terraform would apply) in the run summary. Nothing is
+built, scanned, applied or deployed.
+
+---
+
 ## What NOT to Put in stackramp.yaml
 
 The following are **platform operator concerns**, not app developer concerns:

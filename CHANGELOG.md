@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Faster deploys: only what changed.** Each push deploys only the services whose files changed (per-service dirs, shared dirs, `watch_paths`); a push that touches only docs, markdown, marketing or brand files deploys nothing and skips the scan and quality gate. Prod deploys a service only when its dev deploy ran in the same run (before, every prod service redeployed on every push to main). Manual and scheduled runs, and changes to `stackramp.yaml` or the calling workflow, still deploy everything. Configurable via a new `deploy:` block (`ignore_paths`, `default_ignore_paths`, `full_deploy_paths`).
+- **Terraform only when its inputs change.** Provisioning fingerprints its inputs and applies only when they changed (or on `provision: true`, schedule, or a `stackramp.yaml` change); otherwise it reads outputs from state in seconds. Outputs are read with one `terraform output -json` instead of eleven `terraform output` calls per environment.
+- **Images built once, in parallel with the scans.** A pre-build job builds each source dir once per commit (an API and a worker sharing a dir share one build) with a BuildKit registry cache in Artifact Registry and Docker Hub pulls via `mirror.gcr.io`; deploy jobs and prod reuse the image. The security scan and quality gate now gate the deploys rather than provisioning and builds.
+- Deploy jobs use the runner's preinstalled gcloud instead of installing the latest each time (~25s per job).
+- Machine-backend and Kubernetes prod deploys now also run on `workflow_dispatch` and `schedule` (before: push only), like the other prod deploys.
+
 ### Added
+- Workflow inputs `deploy_all`, `provision` and `dry_run` (report the plan only).
 - **IAP user identity forwarding** (#33) — the SSO proxy now forwards the authenticated caller's identity to the backend via two re-keyed pass-through headers, `X-Stackramp-User-Email` and `X-Stackramp-User-Id`, sourced from IAP's `X-Goog-Authenticated-User-*` headers with the `accounts.google.com:` prefix stripped. Backends opt in to user-aware logic by reading the new headers; existing backends that ignore them are unaffected. Re-keying avoids the Cloud Run auth-layer collision that requires the proxy to strip the original IAP JWT headers.
 - **GCS bucket support in `stackramp.yaml`** (#34) — the `storage:` key now accepts a block form, `storage.buckets`, that provisions one GCS bucket per entry and injects a `BUCKET_<NAME>` env var into the Cloud Run service (for example, a `downloads` bucket exposes `BUCKET_DOWNLOADS`). The runtime service account is granted `roles/storage.objectAdmin` on each provisioned bucket. The existing scalar forms `storage: false` and `storage: gcs` are unchanged and remain back-compatible; use the scalar form or the block form, not both in one file.
 

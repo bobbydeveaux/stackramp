@@ -38,7 +38,8 @@
           "type": "array",
           "items": { "type": "string", "pattern": "^/" },
           "description": "Extra site paths rewritten to the backend service besides /api/** (Firebase Hosting glob syntax, e.g. \"/.well-known/**\", \"/mcp\"). Needs a backend."
-        }
+        },
+        "watch_paths": { "type": "array", "items": { "type": "string" }, "description": "Extra globs whose changes also deploy this service, besides its own dir/** (e.g. a shared package outside the dir)." }
       }
     },
     "backend": {
@@ -85,7 +86,8 @@
           "type": "array",
           "items": { "type": "string" },
           "description": "For access: machine — SA emails allowed to call this backend with Google-signed ID tokens. Injected as STACKRAMP_SERVICE_ACCOUNTS (and MCP_SERVICE_ACCOUNTS for posterity), semicolon-joined."
-        }
+        },
+        "watch_paths": { "type": "array", "items": { "type": "string" }, "description": "Extra globs whose changes also deploy this service, besides its own dir/** (e.g. a shared package outside the dir)." }
       }
     },
     "backends": {
@@ -119,7 +121,8 @@
             "type": "array",
             "items": { "type": "string" },
             "description": "For access: machine — allow-listed SA emails."
-          }
+          },
+          "watch_paths": { "type": "array", "items": { "type": "string" }, "description": "Extra globs whose changes also deploy this service, besides its own dir/** (e.g. a shared package outside the dir)." }
         }
       }
     },
@@ -272,7 +275,8 @@
             "type": "string"
           },
           "description": "Machine consumer SA emails allowed to call this MCP service with Google-signed ID tokens (e.g. agentops@project.iam.gserviceaccount.com \u2014 provisioned by the bootstrap's machine_consumers). Injected into the MCP service as MCP_SERVICE_ACCOUNTS, semicolon-joined."
-        }
+        },
+        "watch_paths": { "type": "array", "items": { "type": "string" }, "description": "Extra globs whose changes also deploy this service, besides its own dir/** (e.g. a shared package outside the dir)." }
       }
     },
     "quality": {
@@ -352,7 +356,18 @@
             },
             "additionalProperties": false
           }
-        }
+        },
+        "watch_paths": { "type": "array", "items": { "type": "string" }, "description": "Extra globs whose changes also deploy this service, besides its own dir/** (e.g. a shared package outside the dir)." }
+      },
+      "additionalProperties": false
+    },
+    "deploy": {
+      "type": "object",
+      "description": "Change detection. A service deploys when a changed file is under its dir (or its watch_paths) and not ignored. Manual (workflow_dispatch) and scheduled runs, and changes to stackramp.yaml or the calling workflow, deploy everything.",
+      "properties": {
+        "ignore_paths": { "type": "array", "items": { "type": "string" }, "description": "Globs that never trigger a deploy, added to the built-in list (root *.md, **/README.md, **/CHANGELOG.md, LICENSE, docs/**, marketing/**, brand/**, .github/**, .claude/**, .vscode/**, .idea/**)." },
+        "default_ignore_paths": { "type": "boolean", "default": true, "description": "false drops the built-in ignore list (only ignore_paths apply)." },
+        "full_deploy_paths": { "type": "array", "items": { "type": "string" }, "description": "Globs whose changes deploy every service (e.g. a shared library or lockfile)." }
       },
       "additionalProperties": false
     }

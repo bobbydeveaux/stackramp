@@ -114,15 +114,23 @@ A composite action (`platform-action/action.yml`) that:
 
 ### 3.4 Change Detection
 
-Uses `dorny/paths-filter` to determine which jobs to run:
+`dorny/paths-filter` lists the changed files (push: the pushed range; PR: the
+whole PR against its base); `platform-action/changes/detect.py` maps them to
+services:
 
 ```yaml
-- frontend/**  → run frontend deploy
-- backend/**   → run backend deploy
-- stackramp.yaml → run both + infra provision
+- <frontend.dir>/**  (+ watch_paths)     → frontend deploy
+- <backend.dir>/**   (+ watch_paths)     → API deploy
+- <backends[].dir>/** (+ watch_paths)    → that backend (shared dirs deploy all their services)
+- deploy.ignore_paths + built-in list    → never deploy (docs/**, *.md, marketing/**, ...)
+- stackramp.yaml, the caller workflow,
+  deploy.full_deploy_paths               → everything
 ```
 
-On first deploy (no prior runs), all paths are treated as changed.
+Manual and scheduled runs, a branch's first push, and any failure to list the
+changes also deploy everything. When nothing deployable changed, every job
+after the parse (scan, quality gate, provision, deploys) is skipped. Prod jobs
+deploy a service only when its dev deploy ran and succeeded in the same run.
 
 ---
 
@@ -399,7 +407,7 @@ bobbydeveaux/stackramp/
 
 ### 8.2 Subsequent Deploys
 
-Steps 5 (provision-infra) is still called but Terraform finds nothing to change (idempotent). Steps 6+7 only run for changed paths.
+Provisioning applies Terraform only when the fingerprint of its inputs changed (or stackramp.yaml changed, a schedule, or `provision: true`); otherwise it reads the outputs from state. Images are pre-built once per commit in parallel with the security scan and quality gate, and reused by prod. Steps 6+7 only run for changed services.
 
 ### 8.3 PR Preview
 

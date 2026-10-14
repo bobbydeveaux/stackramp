@@ -11,6 +11,10 @@ name: StackRamp Platform Deploy
 #         pull-requests: write  # required to post PR preview URLs
 #       uses: bobbydeveaux/stackramp/.github/workflows/platform.yml@main
 #       secrets: inherit
+#
+# What runs: only the services whose files changed (see platform-action/changes
+# and `deploy:` in stackramp.yaml). workflow_dispatch and schedule runs deploy
+# everything; so does a change to stackramp.yaml or to the calling workflow.
 
 on:
   workflow_call:
@@ -20,6 +24,21 @@ on:
         type: string
         required: false
         default: "stackramp.yaml"
+      deploy_all:
+        description: "Deploy every service regardless of what changed (workflow_dispatch and schedule runs always do)"
+        type: boolean
+        required: false
+        default: false
+      provision:
+        description: "Force terraform apply even when its inputs are unchanged (a workflow_dispatch input named `provision` works too)"
+        type: boolean
+        required: false
+        default: false
+      dry_run:
+        description: "Only report the plan: what would deploy and whether Terraform would apply. Builds, scans, applies and deploys nothing."
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   id-token: write
@@ -55,8 +74,14 @@ jobs:
       backend_port: ${{ steps.config.outputs.backend_port }}
       has_database: ${{ steps.config.outputs.has_database }}
       provider: ${{ steps.config.outputs.provider }}
-      frontend_changed: ${{ steps.changes.outputs.frontend }}
-      backend_changed: ${{ steps.changes.outputs.backend }}
+      deploy_frontend: ${{ steps.changes.outputs.deploy_frontend }}
+      deploy_backend: ${{ steps.changes.outputs.deploy_backend }}
+      deploy_mcp: ${{ steps.changes.outputs.deploy_mcp }}
+      deploy_kubernetes: ${{ steps.changes.outputs.deploy_kubernetes }}
+      machine_deploy: ${{ steps.changes.outputs.machine_deploy }}
+      build_groups: ${{ steps.changes.outputs.build_groups }}
+      any_deploy: ${{ steps.changes.outputs.any_deploy }}
+      config_changed: ${{ steps.changes.outputs.config_changed }}
       is_pr: ${{ github.event_name == 'pull_request' }}
       custom_domain: ${{ steps.config.outputs.custom_domain }}
       has_storage: ${{ steps.config.outputs.has_storage }}
@@ -84,7 +109,6 @@ jobs:
       mcp_cpu: ${{ steps.config.outputs.mcp_cpu }}
       mcp_public: ${{ steps.config.outputs.mcp_public }}
       mcp_service_accounts: ${{ steps.config.outputs.mcp_service_accounts }}
-      mcp_changed: ${{ steps.changes.outputs.mcp }}
       machine_backends: ${{ steps.config.outputs.machine_backends }}
       has_kubernetes: ${{ steps.config.outputs.has_kubernetes }}
       kubernetes_chart: ${{ steps.config.outputs.kubernetes_chart }}
@@ -92,7 +116,6 @@ jobs:
       kubernetes_domain: ${{ steps.config.outputs.kubernetes_domain }}
       kubernetes_values: ${{ steps.config.outputs.kubernetes_values }}
       kubernetes_images: ${{ steps.config.outputs.kubernetes_images }}
-      kubernetes_changed: ${{ steps.changes.outputs.kubernetes }}
 
     steps:
       - uses: actions/checkout@v4
@@ -111,32 +134,44 @@ jobs:
 
       - name: Detect changes
         id: changes
-        uses: dorny/paths-filter@v3
+        uses: bobbydeveaux/stackramp/platform-action/changes@main
         with:
-          filters: |
-            frontend:
-              - '${{ steps.config.outputs.frontend_dir }}/**'
-              - '${{ inputs.config_path }}'
-            backend:
-              - '${{ steps.config.outputs.backend_dir }}/**'
-              - '${{ inputs.config_path }}'
-            mcp:
-              - '${{ steps.config.outputs.mcp_dir }}/**'
-              - '${{ inputs.config_path }}'
-            kubernetes:
-              - '${{ steps.config.outputs.kubernetes_chart }}/**'
-              - '${{ inputs.config_path }}'
+          config_path: ${{ inputs.config_path }}
+          # Deploy everything on manual and scheduled runs, when asked, and on
+          # a branch's first push (no previous commit to diff against).
+          force_reason: >-
+            ${{ github.event_name == 'workflow_dispatch' && 'manual run (workflow_dispatch)' ||
+                github.event_name == 'schedule' && 'scheduled run' ||
+                inputs.deploy_all && 'deploy_all input' ||
+                (github.event_name == 'push' && github.event.before == '0000000000000000000000000000000000000000') && 'first push of this branch' ||
+                '' }}
+          app_name: ${{ steps.config.outputs.app_name }}
+          has_frontend: ${{ steps.config.outputs.has_frontend }}
+          has_backend: ${{ steps.config.outputs.has_backend }}
+          has_mcp: ${{ steps.config.outputs.has_mcp }}
+          has_kubernetes: ${{ steps.config.outputs.has_kubernetes }}
+          frontend_dir: ${{ steps.config.outputs.frontend_dir }}
+          backend_dir: ${{ steps.config.outputs.backend_dir }}
+          backend_language: ${{ steps.config.outputs.backend_language }}
+          mcp_dir: ${{ steps.config.outputs.mcp_dir }}
+          mcp_language: ${{ steps.config.outputs.mcp_language }}
+          kubernetes_chart: ${{ steps.config.outputs.kubernetes_chart }}
+          kubernetes_images: ${{ steps.config.outputs.kubernetes_images }}
+          machine_backends: ${{ steps.config.outputs.machine_backends }}
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # 1.5a. Security scan (Guardian) — runs before provisioning
+  # 1.5a. Security scan (Guardian) — in parallel with image builds and
+  # provisioning; blocks every deploy job. Skipped when nothing deploys.
   # ─────────────────────────────────────────────────────────────────────────────
   security-scan:
     name: Security scan
     runs-on: ubuntu-latest
     needs: [parse-config]
     if: |
-      github.event.action != 'closed' &&
-      needs.parse-config.outputs.security_enabled == 'true'
+      needs.parse-config.result == 'success' &&
+      needs.parse-config.outputs.security_enabled == 'true' &&
+      needs.parse-config.outputs.any_deploy == 'true' &&
+      inputs.dry_run != true
     steps:
       - uses: actions/checkout@v6
         with:
@@ -152,15 +187,17 @@ jobs:
           fail_on_findings: ${{ needs.parse-config.outputs.security_fail_on_findings }}
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # 1.5b. Quality gate (Pulse) — runs before provisioning
+  # 1.5b. Quality gate (Pulse) — same placement as the scan.
   # ─────────────────────────────────────────────────────────────────────────────
   quality-gate:
     name: Quality gate
     runs-on: ubuntu-latest
     needs: [parse-config]
     if: |
-      github.event.action != 'closed' &&
-      needs.parse-config.outputs.quality_enabled == 'true'
+      needs.parse-config.result == 'success' &&
+      needs.parse-config.outputs.quality_enabled == 'true' &&
+      needs.parse-config.outputs.any_deploy == 'true' &&
+      inputs.dry_run != true
     steps:
       - uses: actions/checkout@v6
         with:
@@ -176,40 +213,103 @@ jobs:
           fail_on_gate: ${{ needs.parse-config.outputs.quality_fail_on_gate }}
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # 2. Provision app infrastructure (idempotent)
+  # 1.5c. Pre-build Cloud Run images, in parallel with the scans. One build per
+  # source dir (the API and a worker built from the same dir share it), pushed
+  # under each service's image name, tagged with the commit SHA. Pushing an
+  # image deploys nothing; the deploy jobs (which wait for the scans) find it
+  # and skip their own build, and so does prod after dev.
+  # ─────────────────────────────────────────────────────────────────────────────
+  build-images:
+    name: Build image
+    runs-on: ubuntu-latest
+    needs: [parse-config]
+    if: |
+      needs.parse-config.result == 'success' &&
+      needs.parse-config.outputs.build_groups != '[]' &&
+      inputs.dry_run != true
+    strategy:
+      matrix:
+        group: ${{ fromJson(needs.parse-config.outputs.build_groups) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: bobbydeveaux/stackramp/providers/gcp/workflows/auth@main
+        with:
+          wif_provider: ${{ vars.STACKRAMP_WIF_PROVIDER }}
+          service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
+
+      - name: Check for gcloud
+        id: gcloud
+        run: echo "preinstalled=$(command -v gcloud >/dev/null && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          skip_install: ${{ steps.gcloud.outputs.preinstalled == 'true' }}
+
+      - name: Build ${{ matrix.group.images }}
+        uses: bobbydeveaux/stackramp/providers/gcp/workflows/build-image@main
+        with:
+          context: ${{ matrix.group.dir }}
+          language: ${{ matrix.group.language }}
+          images: ${{ matrix.group.images }}
+          registry: ${{ vars.STACKRAMP_REGION || 'europe-west1' }}-docker.pkg.dev/${{ vars.STACKRAMP_PROJECT }}/stackramp-images
+          tag: ${{ github.sha }}
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 2. Provision app infrastructure (idempotent) — only when its inputs moved.
+  #
+  # Terraform runs when: the fingerprint of everything it is fed (the -var
+  # values incl. GitHub vars and the detected DNS zone, the storage buckets,
+  # and the platform Terraform source tree) differs from the one stored after
+  # the last successful apply; stackramp.yaml changed; the `provision` input
+  # (or a workflow_dispatch input named `provision`) is true; a scheduled run;
+  # or no state/fingerprint exists yet. Otherwise the job reads the outputs
+  # straight from the Terraform state in GCS (seconds, no init/plan/apply).
+  # Platform-wide secrets (label platform-inject=true) are NOT Terraform
+  # inputs: deploy jobs discover and mount them at deploy time.
+  # The job always runs when something deploys, so deploy jobs keep a plain
+  # `needs.provision.result == 'success'` gate.
   # ─────────────────────────────────────────────────────────────────────────────
   provision:
     name: Provision infrastructure
     runs-on: ubuntu-latest
-    needs: [parse-config, security-scan, quality-gate]
+    needs: [parse-config]
     if: |
-      always() &&
       needs.parse-config.result == 'success' &&
-      (needs.security-scan.result == 'success' || needs.security-scan.result == 'skipped') &&
-      (needs.quality-gate.result == 'success' || needs.quality-gate.result == 'skipped')
+      needs.parse-config.outputs.any_deploy == 'true'
     outputs:
-      backend_url_dev: ${{ steps.tf-out-dev.outputs.backend_url }}
-      backend_url_prod: ${{ steps.tf-out-prod.outputs.backend_url }}
-      frontend_url_dev: ${{ steps.tf-out-dev.outputs.frontend_url }}
-      frontend_url_prod: ${{ steps.tf-out-prod.outputs.frontend_url }}
-      site_id_dev: ${{ steps.tf-out-dev.outputs.site_id }}
-      site_id_prod: ${{ steps.tf-out-prod.outputs.site_id }}
-      storage_bucket_dev: ${{ steps.tf-out-dev.outputs.storage_bucket }}
-      storage_bucket_prod: ${{ steps.tf-out-prod.outputs.storage_bucket }}
-      bucket_env_json_dev: ${{ steps.tf-out-dev.outputs.bucket_env_json }}
-      bucket_env_json_prod: ${{ steps.tf-out-prod.outputs.bucket_env_json }}
-      database_secret_name_dev: ${{ steps.tf-out-dev.outputs.database_secret_name }}
-      database_secret_name_prod: ${{ steps.tf-out-prod.outputs.database_secret_name }}
-      k8s_cloudsql_sa_email_dev: ${{ steps.tf-out-dev.outputs.k8s_cloudsql_sa_email }}
-      k8s_cloudsql_sa_email_prod: ${{ steps.tf-out-prod.outputs.k8s_cloudsql_sa_email }}
-      k8s_cloudsql_ksa_dev: ${{ steps.tf-out-dev.outputs.k8s_cloudsql_ksa }}
-      k8s_cloudsql_ksa_prod: ${{ steps.tf-out-prod.outputs.k8s_cloudsql_ksa }}
-      k8s_secret_prefix_dev: ${{ steps.tf-out-dev.outputs.k8s_secret_prefix }}
-      k8s_secret_prefix_prod: ${{ steps.tf-out-prod.outputs.k8s_secret_prefix }}
-      k8s_namespace_dev: ${{ steps.tf-out-dev.outputs.k8s_namespace }}
-      k8s_namespace_prod: ${{ steps.tf-out-prod.outputs.k8s_namespace }}
-      mcp_url_dev: ${{ steps.tf-out-dev.outputs.mcp_url }}
-      mcp_url_prod: ${{ steps.tf-out-prod.outputs.mcp_url }}
+      backend_url_dev: ${{ steps.tf.outputs.backend_url_dev }}
+      backend_url_prod: ${{ steps.tf.outputs.backend_url_prod }}
+      frontend_url_dev: ${{ steps.tf.outputs.frontend_url_dev }}
+      frontend_url_prod: ${{ steps.tf.outputs.frontend_url_prod }}
+      site_id_dev: ${{ steps.tf.outputs.site_id_dev }}
+      site_id_prod: ${{ steps.tf.outputs.site_id_prod }}
+      storage_bucket_dev: ${{ steps.tf.outputs.storage_bucket_dev }}
+      storage_bucket_prod: ${{ steps.tf.outputs.storage_bucket_prod }}
+      bucket_env_json_dev: ${{ steps.tf.outputs.bucket_env_json_dev }}
+      bucket_env_json_prod: ${{ steps.tf.outputs.bucket_env_json_prod }}
+      database_secret_name_dev: ${{ steps.tf.outputs.database_secret_name_dev }}
+      database_secret_name_prod: ${{ steps.tf.outputs.database_secret_name_prod }}
+      k8s_cloudsql_sa_email_dev: ${{ steps.tf.outputs.k8s_cloudsql_sa_email_dev }}
+      k8s_cloudsql_sa_email_prod: ${{ steps.tf.outputs.k8s_cloudsql_sa_email_prod }}
+      k8s_cloudsql_ksa_dev: ${{ steps.tf.outputs.k8s_cloudsql_ksa_dev }}
+      k8s_cloudsql_ksa_prod: ${{ steps.tf.outputs.k8s_cloudsql_ksa_prod }}
+      k8s_secret_prefix_dev: ${{ steps.tf.outputs.k8s_secret_prefix_dev }}
+      k8s_secret_prefix_prod: ${{ steps.tf.outputs.k8s_secret_prefix_prod }}
+      k8s_namespace_dev: ${{ steps.tf.outputs.k8s_namespace_dev }}
+      k8s_namespace_prod: ${{ steps.tf.outputs.k8s_namespace_prod }}
+      mcp_url_dev: ${{ steps.tf.outputs.mcp_url_dev }}
+      mcp_url_prod: ${{ steps.tf.outputs.mcp_url_prod }}
+      applied: ${{ steps.plan.outputs.any_apply }}
+    env:
+      APP: ${{ needs.parse-config.outputs.app_name }}
+      PROJECT: ${{ vars.STACKRAMP_PROJECT }}
+      STATE_BUCKET: ${{ vars.STACKRAMP_PROJECT }}-tf-state
+      TF_DIR: .stackramp/providers/gcp/terraform/platform
+      # prod infra follows main only (push, manual run, schedule)
+      WITH_PROD: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') }}
     steps:
       - name: Checkout StackRamp platform
         uses: actions/checkout@v4
@@ -223,16 +323,6 @@ jobs:
         with:
           wif_provider: ${{ vars.STACKRAMP_WIF_PROVIDER }}
           service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-
-      - name: Terraform init
-        working-directory: .stackramp/providers/gcp/terraform/platform
-        run: |
-          terraform init \
-            -backend-config="bucket=${{ vars.STACKRAMP_PROJECT }}-tf-state" \
-            -backend-config="prefix=${{ needs.parse-config.outputs.app_name }}-dev"
 
       - name: Detect DNS zone for custom domain
         id: dns
@@ -269,137 +359,160 @@ jobs:
           echo "zone_name=$ZONE_NAME" >> "$GITHUB_OUTPUT"
           echo "is_apex=$IS_APEX" >> "$GITHUB_OUTPUT"
 
-      - name: Terraform apply (dev)
-        working-directory: .stackramp/providers/gcp/terraform/platform
+      - name: Terraform inputs and fingerprint check
+        id: plan
         env:
-          # buckets_json carries quotes/spaces, so it is passed via env and a
-          # separate quoted -var argument rather than the unquoted TF_VARS blob.
           BUCKETS_JSON: ${{ needs.parse-config.outputs.storage_buckets }}
+          FORCE_PROVISION: ${{ inputs.provision == true || github.event.inputs.provision == 'true' || github.event.inputs.provision == true || github.event_name == 'schedule' }}
+          CONFIG_CHANGED: ${{ needs.parse-config.outputs.config_changed }}
         run: |
-          # An auto-generated base-domain subdomain (app.base_domain) gets its own
-          # app.dev.base_domain for dev. An explicit custom domain set in stackramp.yaml
-          # belongs to PROD only — dev must not bind it, or dev and prod would fight over
-          # the same records in the same Cloud DNS zone. dev then uses its .web.app URL.
-          CUSTOM_DOMAIN="${{ needs.parse-config.outputs.custom_domain }}"
+          set -euo pipefail
+          CUSTOM_DOMAIN_RAW="${{ needs.parse-config.outputs.custom_domain }}"
           BASE_DOMAIN="${{ vars.STACKRAMP_BASE_DOMAIN }}"
-          APP="${{ needs.parse-config.outputs.app_name }}"
-          if [ -n "$CUSTOM_DOMAIN" ] && [ -n "$BASE_DOMAIN" ] && [ "$CUSTOM_DOMAIN" = "${APP}.${BASE_DOMAIN}" ]; then
-            CUSTOM_DOMAIN="${APP}.dev.${BASE_DOMAIN}"
-          elif [ -n "$CUSTOM_DOMAIN" ]; then
-            CUSTOM_DOMAIN=""
-          fi
-          BACKEND_DOMAIN=""
-          [ -n "$CUSTOM_DOMAIN" ] && [ "${{ needs.parse-config.outputs.has_backend }}" = "true" ] && BACKEND_DOMAIN="api.${CUSTOM_DOMAIN}"
+          HAS_BACKEND="${{ needs.parse-config.outputs.has_backend }}"
+          ENVS="dev"; [ "$WITH_PROD" = "true" ] && ENVS="dev prod"
 
-          HAS_SSO="${{ needs.parse-config.outputs.has_sso }}"
-          TF_VARS="-var=app_name=${{ needs.parse-config.outputs.app_name }} \
-            -var=environment=dev \
-            -var=platform_project=${{ vars.STACKRAMP_PROJECT }} \
-            -var=region=${{ vars.STACKRAMP_REGION }} \
-            -var=custom_domain=${CUSTOM_DOMAIN} \
-            -var=backend_domain=${BACKEND_DOMAIN} \
-            -var=dns_zone_name=${{ steps.dns.outputs.zone_name }} \
-            -var=domain_is_apex=${{ steps.dns.outputs.is_apex }} \
-            -var=has_backend=${{ needs.parse-config.outputs.has_backend == 'true' }} \
-            -var=has_storage=${{ needs.parse-config.outputs.has_storage == 'true' }} \
-            -var=has_database=${{ needs.parse-config.outputs.has_database == 'true' }} \
-            -var=cloudsql_connection_name=${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }} \
-            -var=has_sso=${HAS_SSO} \
-            -var=iap_allowed_domain=${{ vars.STACKRAMP_IAP_DOMAIN || '' }} \
-            -var=frontend_sa_email=${{ vars.STACKRAMP_FRONTEND_SA || '' }} \
-            -var=has_mcp=${{ needs.parse-config.outputs.has_mcp == 'true' }} \
-            -var=has_kubernetes=${{ needs.parse-config.outputs.has_kubernetes == 'true' }} \
-            -var=kubernetes_namespace=${{ needs.parse-config.outputs.kubernetes_namespace }} \
-            -var=gke_gateway_ip=${{ vars.STACKRAMP_GKE_GATEWAY_IP }}"
+          # The platform Terraform source this run applies (tree hash of the dir).
+          TF_TREE=$(git -C .stackramp rev-parse HEAD:providers/gcp/terraform/platform)
 
-          terraform apply -auto-approve $TF_VARS -var="buckets_json=${BUCKETS_JSON:-[]}"
+          ANY_APPLY=false
+          echo "### Provisioning" >> "$GITHUB_STEP_SUMMARY"
+          for ENV in $ENVS; do
+            CUSTOM_DOMAIN="$CUSTOM_DOMAIN_RAW"
+            if [ "$ENV" = "dev" ]; then
+              # An auto-generated base-domain subdomain (app.base_domain) gets its own
+              # app.dev.base_domain for dev. An explicit custom domain set in stackramp.yaml
+              # belongs to PROD only — dev must not bind it, or dev and prod would fight over
+              # the same records in the same Cloud DNS zone. dev then uses its .web.app URL.
+              if [ -n "$CUSTOM_DOMAIN" ] && [ -n "$BASE_DOMAIN" ] && [ "$CUSTOM_DOMAIN" = "${APP}.${BASE_DOMAIN}" ]; then
+                CUSTOM_DOMAIN="${APP}.dev.${BASE_DOMAIN}"
+              elif [ -n "$CUSTOM_DOMAIN" ]; then
+                CUSTOM_DOMAIN=""
+              fi
+            fi
+            BACKEND_DOMAIN=""
+            [ -n "$CUSTOM_DOMAIN" ] && [ "$HAS_BACKEND" = "true" ] && BACKEND_DOMAIN="api.${CUSTOM_DOMAIN}"
 
-      - name: Capture dev outputs
-        id: tf-out-dev
-        working-directory: .stackramp/providers/gcp/terraform/platform
-        run: |
-          echo "backend_url=$(terraform output -raw backend_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
-          echo "frontend_url=$(terraform output -raw frontend_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
-          echo "site_id=$(terraform output -raw site_id 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
-          echo "storage_bucket=$(terraform output -raw storage_bucket 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
-          echo "bucket_env_json=$(terraform output -raw bucket_env_json 2>/dev/null || echo '{}')" >> $GITHUB_OUTPUT
-          echo "database_secret_name=$(terraform output -raw database_secret_name 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
-          echo "k8s_cloudsql_sa_email=$(terraform output -raw k8s_cloudsql_sa_email 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
-          echo "k8s_cloudsql_ksa=$(terraform output -raw k8s_cloudsql_ksa 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
-          echo "k8s_secret_prefix=$(terraform output -raw k8s_secret_prefix 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
-          echo "k8s_namespace=$(terraform output -raw k8s_namespace 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
-          echo "mcp_url=$(terraform output -raw mcp_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+            # One -var per line; the apply step reads them back as an array.
+            # buckets_json carries quotes/spaces, so it rides as a single line too.
+            VARS_FILE="$RUNNER_TEMP/tfvars-$ENV.txt"
+            cat > "$VARS_FILE" <<EOF
+          -var=app_name=${APP}
+          -var=environment=${ENV}
+          -var=platform_project=${{ vars.STACKRAMP_PROJECT }}
+          -var=region=${{ vars.STACKRAMP_REGION }}
+          -var=custom_domain=${CUSTOM_DOMAIN}
+          -var=backend_domain=${BACKEND_DOMAIN}
+          -var=dns_zone_name=${{ steps.dns.outputs.zone_name }}
+          -var=domain_is_apex=${{ steps.dns.outputs.is_apex }}
+          -var=has_backend=${{ needs.parse-config.outputs.has_backend == 'true' }}
+          -var=has_storage=${{ needs.parse-config.outputs.has_storage == 'true' }}
+          -var=has_database=${{ needs.parse-config.outputs.has_database == 'true' }}
+          -var=cloudsql_connection_name=${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }}
+          -var=has_sso=${{ needs.parse-config.outputs.has_sso }}
+          -var=iap_allowed_domain=${{ vars.STACKRAMP_IAP_DOMAIN || '' }}
+          -var=frontend_sa_email=${{ vars.STACKRAMP_FRONTEND_SA || '' }}
+          -var=has_mcp=${{ needs.parse-config.outputs.has_mcp == 'true' }}
+          -var=has_kubernetes=${{ needs.parse-config.outputs.has_kubernetes == 'true' }}
+          -var=kubernetes_namespace=${{ needs.parse-config.outputs.kubernetes_namespace }}
+          -var=gke_gateway_ip=${{ vars.STACKRAMP_GKE_GATEWAY_IP }}
+          -var=buckets_json=${BUCKETS_JSON:-[]}
+          EOF
+            # Strip the YAML block indentation the heredoc keeps.
+            sed -i 's/^ *//' "$VARS_FILE"
 
-      - name: Terraform init (prod)
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        working-directory: .stackramp/providers/gcp/terraform/platform
-        run: |
-          terraform init -reconfigure \
-            -backend-config="bucket=${{ vars.STACKRAMP_PROJECT }}-tf-state" \
-            -backend-config="prefix=${{ needs.parse-config.outputs.app_name }}-prod"
+            FP=$( { echo "stackramp-provision-v1"; echo "$TF_TREE"; cat "$VARS_FILE"; } | sha256sum | cut -d' ' -f1)
+            PREFIX="gs://${STATE_BUCKET}/${APP}-${ENV}"
+            STORED=$(gcloud storage cat "${PREFIX}/stackramp-fingerprint" 2>/dev/null || true)
+            HAS_STATE=false
+            gcloud storage ls "${PREFIX}/default.tfstate" >/dev/null 2>&1 && HAS_STATE=true
 
-      - name: Terraform apply (prod — main branch only)
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        working-directory: .stackramp/providers/gcp/terraform/platform
+            REASON=""
+            if [ "$FORCE_PROVISION" = "true" ]; then REASON="forced (provision input or schedule)"
+            elif [ "$CONFIG_CHANGED" = "true" ]; then REASON="stackramp.yaml changed"
+            elif [ "$HAS_STATE" != "true" ]; then REASON="no Terraform state yet"
+            elif [ -z "$STORED" ]; then REASON="no stored fingerprint (first run with this check)"
+            elif [ "$STORED" != "$FP" ]; then REASON="Terraform inputs changed"
+            fi
+            APPLY=false; [ -n "$REASON" ] && APPLY=true && ANY_APPLY=true
+            echo "apply_${ENV}=${APPLY}" >> "$GITHUB_OUTPUT"
+            echo "fp_${ENV}=${FP}" >> "$GITHUB_OUTPUT"
+            echo "${ENV}: apply=${APPLY} ${REASON:+(${REASON})} fingerprint=${FP:0:12} stored=${STORED:0:12}"
+            echo "- **${ENV}**: $([ "$APPLY" = true ] && echo "terraform apply — ${REASON}" || echo "unchanged — outputs read from state")" >> "$GITHUB_STEP_SUMMARY"
+          done
+          echo "envs=$ENVS" >> "$GITHUB_OUTPUT"
+          echo "any_apply=$ANY_APPLY" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Terraform
+        if: steps.plan.outputs.any_apply == 'true' && inputs.dry_run != true
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Apply or read outputs
+        id: tf
+        if: inputs.dry_run != true
+        working-directory: ${{ env.TF_DIR }}
         env:
-          BUCKETS_JSON: ${{ needs.parse-config.outputs.storage_buckets }}
+          HAS_BACKEND: ${{ needs.parse-config.outputs.has_backend }}
+          HAS_DATABASE: ${{ needs.parse-config.outputs.has_database }}
         run: |
-          CUSTOM_DOMAIN="${{ needs.parse-config.outputs.custom_domain }}"
-          BACKEND_DOMAIN=""
-          [ -n "$CUSTOM_DOMAIN" ] && [ "${{ needs.parse-config.outputs.has_backend }}" = "true" ] && BACKEND_DOMAIN="api.${CUSTOM_DOMAIN}"
+          set -euo pipefail
+          KEYS="backend_url frontend_url site_id storage_bucket bucket_env_json database_secret_name k8s_cloudsql_sa_email k8s_cloudsql_ksa k8s_secret_prefix k8s_namespace mcp_url"
+          for ENV in ${{ steps.plan.outputs.envs }}; do
+            PREFIX="gs://${STATE_BUCKET}/${APP}-${ENV}"
+            OUT="$RUNNER_TEMP/tf-out-$ENV.json"
+            if [ "$ENV" = "dev" ]; then APPLY="${{ steps.plan.outputs.apply_dev }}"; FP="${{ steps.plan.outputs.fp_dev }}"
+            else APPLY="${{ steps.plan.outputs.apply_prod }}"; FP="${{ steps.plan.outputs.fp_prod }}"; fi
 
-          HAS_SSO="${{ needs.parse-config.outputs.has_sso }}"
-          TF_VARS="-var=app_name=${{ needs.parse-config.outputs.app_name }} \
-            -var=environment=prod \
-            -var=platform_project=${{ vars.STACKRAMP_PROJECT }} \
-            -var=region=${{ vars.STACKRAMP_REGION }} \
-            -var=custom_domain=${CUSTOM_DOMAIN} \
-            -var=backend_domain=${BACKEND_DOMAIN} \
-            -var=dns_zone_name=${{ steps.dns.outputs.zone_name }} \
-            -var=domain_is_apex=${{ steps.dns.outputs.is_apex }} \
-            -var=has_backend=${{ needs.parse-config.outputs.has_backend == 'true' }} \
-            -var=has_storage=${{ needs.parse-config.outputs.has_storage == 'true' }} \
-            -var=has_database=${{ needs.parse-config.outputs.has_database == 'true' }} \
-            -var=cloudsql_connection_name=${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }} \
-            -var=has_sso=${HAS_SSO} \
-            -var=iap_allowed_domain=${{ vars.STACKRAMP_IAP_DOMAIN || '' }} \
-            -var=frontend_sa_email=${{ vars.STACKRAMP_FRONTEND_SA || '' }} \
-            -var=has_mcp=${{ needs.parse-config.outputs.has_mcp == 'true' }} \
-            -var=has_kubernetes=${{ needs.parse-config.outputs.has_kubernetes == 'true' }} \
-            -var=kubernetes_namespace=${{ needs.parse-config.outputs.kubernetes_namespace }} \
-            -var=gke_gateway_ip=${{ vars.STACKRAMP_GKE_GATEWAY_IP }}"
+            if [ "$APPLY" = "true" ]; then
+              echo "::group::terraform apply ($ENV)"
+              terraform init -reconfigure -input=false \
+                -backend-config="bucket=${STATE_BUCKET}" \
+                -backend-config="prefix=${APP}-${ENV}"
+              mapfile -t TF_VARS < "$RUNNER_TEMP/tfvars-$ENV.txt"
+              terraform apply -auto-approve -input=false "${TF_VARS[@]}"
+              terraform output -json | jq 'map_values(.value)' > "$OUT"
+              printf '%s' "$FP" | gcloud storage cp - "${PREFIX}/stackramp-fingerprint" --quiet
+              echo "::endgroup::"
+            else
+              echo "$ENV: Terraform inputs unchanged — reading outputs from state."
+              gcloud storage cat "${PREFIX}/default.tfstate" | jq '.outputs | map_values(.value)' > "$OUT"
+            fi
 
-          terraform apply -auto-approve $TF_VARS -var="buckets_json=${BUCKETS_JSON:-[]}"
+            for K in $KEYS; do
+              V=$(jq -r --arg k "$K" '.[$k] // "" | if type == "string" then . else tojson end' "$OUT")
+              [ "$K" = "bucket_env_json" ] && [ -z "$V" ] && V="{}"
+              echo "${K}_${ENV}=${V}" >> "$GITHUB_OUTPUT"
+            done
 
-      - name: Capture prod outputs
-        id: tf-out-prod
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        working-directory: .stackramp/providers/gcp/terraform/platform
-        run: |
-          echo "backend_url=$(terraform output -raw backend_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
-          echo "frontend_url=$(terraform output -raw frontend_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
-          echo "site_id=$(terraform output -raw site_id 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
-          echo "storage_bucket=$(terraform output -raw storage_bucket 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
-          echo "bucket_env_json=$(terraform output -raw bucket_env_json 2>/dev/null || echo '{}')" >> $GITHUB_OUTPUT
-          echo "database_secret_name=$(terraform output -raw database_secret_name 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
-          echo "k8s_cloudsql_sa_email=$(terraform output -raw k8s_cloudsql_sa_email 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
-          echo "k8s_cloudsql_ksa=$(terraform output -raw k8s_cloudsql_ksa 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
-          echo "k8s_secret_prefix=$(terraform output -raw k8s_secret_prefix 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
-          echo "k8s_namespace=$(terraform output -raw k8s_namespace 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
-          echo "mcp_url=$(terraform output -raw mcp_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+            # Never hand deploy jobs empty wiring: a missing DATABASE_URL secret
+            # or backend URL would deploy a broken service.
+            if [ "$HAS_BACKEND" = "true" ] && [ -z "$(jq -r '.backend_url // ""' "$OUT")" ]; then
+              echo "::error::$ENV: backend_url missing from Terraform outputs. Re-run with provision: true."; exit 1
+            fi
+            if [ "$HAS_DATABASE" = "true" ] && [ -z "$(jq -r '.database_secret_name // ""' "$OUT")" ]; then
+              echo "::error::$ENV: database_secret_name missing from Terraform outputs. Re-run with provision: true."; exit 1
+            fi
+          done
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # 3. Deploy frontend (if changed)
+  # 3. Deploy to dev / PR preview — each service only when its files changed,
+  # after provisioning, the scans and the image pre-build
   # ─────────────────────────────────────────────────────────────────────────────
   deploy-frontend:
     name: Frontend
-    needs: [parse-config, provision, deploy-backend]
+    needs: [parse-config, provision, security-scan, quality-gate, build-images, deploy-backend]
     if: |
-      always() &&
+      !cancelled() &&
       needs.parse-config.result == 'success' && needs.provision.result == 'success' &&
+      (needs.security-scan.result == 'success' || needs.security-scan.result == 'skipped') &&
+      (needs.quality-gate.result == 'success' || needs.quality-gate.result == 'skipped') &&
+      (needs.build-images.result == 'success' || needs.build-images.result == 'skipped') &&
+      inputs.dry_run != true &&
       (needs.deploy-backend.result == 'success' || needs.deploy-backend.result == 'skipped') &&
       needs.parse-config.outputs.has_frontend == 'true' &&
-      (needs.parse-config.outputs.frontend_changed == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request')
+      needs.parse-config.outputs.deploy_frontend == 'true'
     uses: bobbydeveaux/stackramp/.github/workflows/_frontend.yml@main
     secrets: inherit
     with:
@@ -426,11 +539,16 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────────
   deploy-backend:
     name: Backend
-    needs: [parse-config, provision]
+    needs: [parse-config, provision, security-scan, quality-gate, build-images]
     if: |
-      needs.provision.result == 'success' &&
+      !cancelled() &&
+      needs.parse-config.result == 'success' && needs.provision.result == 'success' &&
+      (needs.security-scan.result == 'success' || needs.security-scan.result == 'skipped') &&
+      (needs.quality-gate.result == 'success' || needs.quality-gate.result == 'skipped') &&
+      (needs.build-images.result == 'success' || needs.build-images.result == 'skipped') &&
+      inputs.dry_run != true &&
       needs.parse-config.outputs.has_backend == 'true' &&
-      (needs.parse-config.outputs.backend_changed == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request')
+      needs.parse-config.outputs.deploy_backend == 'true'
     uses: bobbydeveaux/stackramp/.github/workflows/_backend.yml@main
     secrets: inherit
     with:
@@ -457,11 +575,16 @@ jobs:
 
   deploy-mcp:
     name: MCP server
-    needs: [parse-config, provision]
+    needs: [parse-config, provision, security-scan, quality-gate, build-images]
     if: |
-      needs.provision.result == 'success' &&
+      !cancelled() &&
+      needs.parse-config.result == 'success' && needs.provision.result == 'success' &&
+      (needs.security-scan.result == 'success' || needs.security-scan.result == 'skipped') &&
+      (needs.quality-gate.result == 'success' || needs.quality-gate.result == 'skipped') &&
+      (needs.build-images.result == 'success' || needs.build-images.result == 'skipped') &&
+      inputs.dry_run != true &&
       needs.parse-config.outputs.has_mcp == 'true' &&
-      (needs.parse-config.outputs.mcp_changed == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request')
+      needs.parse-config.outputs.deploy_mcp == 'true'
     uses: bobbydeveaux/stackramp/.github/workflows/_mcp.yml@main
     secrets: inherit
     with:
@@ -490,14 +613,19 @@ jobs:
   # (deploy-mcp) are untouched.
   deploy-machine:
     name: Machine backend
-    needs: [parse-config, provision]
+    needs: [parse-config, provision, security-scan, quality-gate, build-images]
     if: |
-      needs.provision.result == 'success' &&
-      needs.parse-config.outputs.machine_backends != '[]' &&
-      (needs.parse-config.outputs.backend_changed == 'true' || needs.parse-config.outputs.mcp_changed == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request')
+      !cancelled() &&
+      needs.parse-config.result == 'success' && needs.provision.result == 'success' &&
+      (needs.security-scan.result == 'success' || needs.security-scan.result == 'skipped') &&
+      (needs.quality-gate.result == 'success' || needs.quality-gate.result == 'skipped') &&
+      (needs.build-images.result == 'success' || needs.build-images.result == 'skipped') &&
+      inputs.dry_run != true &&
+      needs.parse-config.outputs.machine_deploy != '[]' &&
+      needs.parse-config.outputs.machine_deploy != ''
     strategy:
       matrix:
-        svc: ${{ fromJson(needs.parse-config.outputs.machine_backends) }}
+        svc: ${{ fromJson(needs.parse-config.outputs.machine_deploy) }}
     uses: bobbydeveaux/stackramp/.github/workflows/_mcp.yml@main
     secrets: inherit
     with:
@@ -527,11 +655,16 @@ jobs:
 
   deploy-kubernetes:
     name: Kubernetes app
-    needs: [parse-config, provision]
+    needs: [parse-config, provision, security-scan, quality-gate, build-images]
     if: |
-      needs.provision.result == 'success' &&
+      !cancelled() &&
+      needs.parse-config.result == 'success' && needs.provision.result == 'success' &&
+      (needs.security-scan.result == 'success' || needs.security-scan.result == 'skipped') &&
+      (needs.quality-gate.result == 'success' || needs.quality-gate.result == 'skipped') &&
+      (needs.build-images.result == 'success' || needs.build-images.result == 'skipped') &&
+      inputs.dry_run != true &&
       needs.parse-config.outputs.has_kubernetes == 'true' &&
-      (needs.parse-config.outputs.kubernetes_changed == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request')
+      needs.parse-config.outputs.deploy_kubernetes == 'true'
     uses: bobbydeveaux/stackramp/.github/workflows/_kubernetes.yml@main
     secrets: inherit
     with:
@@ -556,18 +689,20 @@ jobs:
       gateway_namespace: ${{ vars.STACKRAMP_GKE_GATEWAY_NAMESPACE }}
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # 4. Deploy to PROD (main branch only, after dev succeeds)
+  # 4. Deploy to PROD (main branch only, after that service's dev deploy
+  # succeeded). Reuses the image dev pushed for this commit (no rebuild).
   # ─────────────────────────────────────────────────────────────────────────────
   deploy-frontend-prod:
     name: Frontend → prod
     needs: [parse-config, provision, deploy-frontend]
     if: |
-      always() &&
+      !cancelled() &&
       github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') &&
       needs.provision.result == 'success' &&
       needs.parse-config.outputs.has_frontend == 'true' &&
-      (needs.deploy-frontend.result == 'success' || needs.deploy-frontend.result == 'skipped')
+      needs.parse-config.outputs.deploy_frontend == 'true' &&
+      needs.deploy-frontend.result == 'success'
     uses: bobbydeveaux/stackramp/.github/workflows/_frontend.yml@main
     secrets: inherit
     with:
@@ -593,12 +728,13 @@ jobs:
     name: Backend → prod
     needs: [parse-config, provision, deploy-backend]
     if: |
-      always() &&
+      !cancelled() &&
       github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') &&
       needs.provision.result == 'success' &&
       needs.parse-config.outputs.has_backend == 'true' &&
-      (needs.deploy-backend.result == 'success' || needs.deploy-backend.result == 'skipped')
+      needs.parse-config.outputs.deploy_backend == 'true' &&
+      needs.deploy-backend.result == 'success'
     uses: bobbydeveaux/stackramp/.github/workflows/_backend.yml@main
     secrets: inherit
     with:
@@ -627,12 +763,13 @@ jobs:
     name: MCP server → prod
     needs: [parse-config, provision, deploy-mcp]
     if: |
-      always() &&
+      !cancelled() &&
       github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') &&
       needs.provision.result == 'success' &&
       needs.parse-config.outputs.has_mcp == 'true' &&
-      (needs.deploy-mcp.result == 'success' || needs.deploy-mcp.result == 'skipped')
+      needs.parse-config.outputs.deploy_mcp == 'true' &&
+      needs.deploy-mcp.result == 'success'
     uses: bobbydeveaux/stackramp/.github/workflows/_mcp.yml@main
     secrets: inherit
     with:
@@ -658,14 +795,16 @@ jobs:
     name: Machine backend → prod
     needs: [parse-config, provision, deploy-machine]
     if: |
-      always() &&
-      github.ref == 'refs/heads/main' && github.event_name == 'push' &&
+      !cancelled() &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') &&
       needs.provision.result == 'success' &&
-      needs.parse-config.outputs.machine_backends != '[]' &&
-      (needs.deploy-machine.result == 'success' || needs.deploy-machine.result == 'skipped')
+      needs.parse-config.outputs.machine_deploy != '[]' &&
+      needs.parse-config.outputs.machine_deploy != '' &&
+      needs.deploy-machine.result == 'success'
     strategy:
       matrix:
-        svc: ${{ fromJson(needs.parse-config.outputs.machine_backends) }}
+        svc: ${{ fromJson(needs.parse-config.outputs.machine_deploy) }}
     uses: bobbydeveaux/stackramp/.github/workflows/_mcp.yml@main
     secrets: inherit
     with:
@@ -697,10 +836,13 @@ jobs:
     name: Kubernetes app → prod
     needs: [parse-config, provision, deploy-kubernetes]
     if: |
-      github.ref == 'refs/heads/main' && github.event_name == 'push' &&
+      !cancelled() &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') &&
       needs.provision.result == 'success' &&
       needs.parse-config.outputs.has_kubernetes == 'true' &&
-      (needs.deploy-kubernetes.result == 'success' || needs.deploy-kubernetes.result == 'skipped')
+      needs.parse-config.outputs.deploy_kubernetes == 'true' &&
+      needs.deploy-kubernetes.result == 'success'
     uses: bobbydeveaux/stackramp/.github/workflows/_kubernetes.yml@main
     secrets: inherit
     with:

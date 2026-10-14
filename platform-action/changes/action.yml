@@ -1,0 +1,121 @@
+name: "StackRamp change detection"
+description: "Work out which deployables changed (per service dir, shared dirs, ignore list) — see detect.py"
+
+inputs:
+  config_path:
+    description: "Path to stackramp.yaml"
+    required: false
+    default: "stackramp.yaml"
+  force_reason:
+    description: "Non-empty => deploy everything, with this reason (manual run, schedule, ...)"
+    required: false
+    default: ""
+  app_name:
+    required: true
+  has_frontend:
+    required: true
+  has_backend:
+    required: true
+  has_mcp:
+    required: true
+  has_kubernetes:
+    required: true
+  frontend_dir:
+    required: false
+    default: "frontend"
+  backend_dir:
+    required: false
+    default: "backend"
+  backend_language:
+    required: false
+    default: ""
+  mcp_dir:
+    required: false
+    default: "mcp"
+  mcp_language:
+    required: false
+    default: "go"
+  kubernetes_chart:
+    required: false
+    default: ""
+  kubernetes_images:
+    required: false
+    default: "[]"
+  machine_backends:
+    required: false
+    default: "[]"
+
+outputs:
+  deploy_frontend:
+    value: ${{ steps.detect.outputs.deploy_frontend }}
+  deploy_backend:
+    value: ${{ steps.detect.outputs.deploy_backend }}
+  deploy_mcp:
+    value: ${{ steps.detect.outputs.deploy_mcp }}
+  deploy_kubernetes:
+    value: ${{ steps.detect.outputs.deploy_kubernetes }}
+  machine_deploy:
+    description: "JSON array: the machine_backends entries to deploy"
+    value: ${{ steps.detect.outputs.machine_deploy }}
+  build_groups:
+    description: "JSON array of {dir, language, images} — one image build per group"
+    value: ${{ steps.detect.outputs.build_groups }}
+  any_deploy:
+    value: ${{ steps.detect.outputs.any_deploy }}
+  full_deploy:
+    value: ${{ steps.detect.outputs.full_deploy }}
+  deploy_reason:
+    value: ${{ steps.detect.outputs.deploy_reason }}
+
+runs:
+  using: "composite"
+  steps:
+    # List every changed file. paths-filter knows how to diff each event type
+    # (push: before..after; pull_request: the whole PR vs its base). If it
+    # cannot produce a list, the detect step falls back to deploying all.
+    - name: List changed files
+      id: filter
+      if: inputs.force_reason == ''
+      continue-on-error: true
+      uses: dorny/paths-filter@v3
+      with:
+        list-files: json
+        filters: |
+          all:
+            - '**'
+
+    - name: Decide what to deploy
+      id: detect
+      shell: bash
+      env:
+        CONFIG_PATH: ${{ inputs.config_path }}
+        FORCE_REASON: ${{ inputs.force_reason }}
+        FILTER_OUTCOME: ${{ steps.filter.outcome }}
+        CHANGED_FILES_RAW: ${{ steps.filter.outputs.all_files }}
+        APP_NAME: ${{ inputs.app_name }}
+        HAS_FRONTEND: ${{ inputs.has_frontend }}
+        HAS_BACKEND: ${{ inputs.has_backend }}
+        HAS_MCP: ${{ inputs.has_mcp }}
+        HAS_KUBERNETES: ${{ inputs.has_kubernetes }}
+        FRONTEND_DIR: ${{ inputs.frontend_dir }}
+        BACKEND_DIR: ${{ inputs.backend_dir }}
+        BACKEND_LANGUAGE: ${{ inputs.backend_language }}
+        MCP_DIR: ${{ inputs.mcp_dir }}
+        MCP_LANGUAGE: ${{ inputs.mcp_language }}
+        KUBERNETES_CHART: ${{ inputs.kubernetes_chart }}
+        KUBERNETES_IMAGES: ${{ inputs.kubernetes_images }}
+        MACHINE_BACKENDS: ${{ inputs.machine_backends }}
+      run: |
+        # The app workflow that called platform.yml (github.workflow_ref is the
+        # caller's: owner/repo/.github/workflows/deploy.yml@refs/heads/main).
+        CALLER_WORKFLOW="${GITHUB_WORKFLOW_REF#"${GITHUB_REPOSITORY}"/}"
+        export CALLER_WORKFLOW="${CALLER_WORKFLOW%%@*}"
+        export CONFIG_JSON="$(yq -o=json -I=0 '.' "$CONFIG_PATH")"
+        if [ -z "$FORCE_REASON" ]; then
+          if [ "$FILTER_OUTCOME" != "success" ]; then
+            export FORCE_REASON="could not list changed files (paths-filter ${FILTER_OUTCOME:-skipped})"
+          else
+            export CHANGED_FILES="${CHANGED_FILES_RAW:-[]}"
+          fi
+        fi
+        python3 "${{ github.action_path }}/detect.py"
