@@ -131,6 +131,11 @@
       "description": "Custom domain for this app (e.g. stackramp.io or myapp.com). Omit to use {app_name}.{STACKRAMP_BASE_DOMAIN}.",
       "pattern": "^([a-z0-9-]+\\.)+[a-z]{2,}$"
     },
+    "domain_txt": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Extra TXT values kept at the zone apex of an apex custom domain in a managed Cloud DNS zone (e.g. SPF, google-site-verification). One unquoted value per item; values over 255 characters are split automatically."
+    },
     "database": {
       "oneOf": [
         {

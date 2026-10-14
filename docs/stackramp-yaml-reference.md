@@ -8,6 +8,8 @@
 name: my-app
 
 domain: my-app.io   # optional — explicit custom domain
+domain_txt:         # optional — extra TXT values at the apex (SPF, site verification)
+  - v=spf1 include:_spf.google.com ~all
 
 frontend:
   framework: react
@@ -53,6 +55,30 @@ At deploy time the platform auto-detects the Cloud DNS zone authoritative for th
 - **External** — no Cloud DNS zone exists. StackRamp registers the Firebase custom domain and reports the records to add at your own registrar; your DNS stays where it is.
 
 See INTEGRATION.md → *Custom Domains* for how to provision a zone for your own domain.
+
+### `domain_txt` (optional)
+
+| | |
+|---|---|
+| Type | `list of string` |
+| Default | `[]` |
+| Example | `["v=spf1 include:_spf.google.com ~all", "google-site-verification=abc123"]` |
+
+Extra TXT values to keep at the zone apex when `domain` is the apex of a **managed** Cloud DNS zone (e.g. `thedeveauxgroup.co.uk`, not `app.thedeveauxgroup.co.uk`). Use it for SPF, `google-site-verification=...` tokens and other apex TXT records.
+
+```yaml
+domain: thedeveauxgroup.co.uk
+domain_txt:
+  - v=spf1 include:_spf.google.com ~all
+  - google-site-verification=abc123
+```
+
+Why it exists: for an apex domain StackRamp already owns the apex TXT record set (it holds the `hosting-site=<site_id>` value Firebase uses to verify the domain), and Cloud DNS allows only one TXT record set per name. A TXT record added by hand in the console would fail to create, or be overwritten on the next deploy. `domain_txt` values go into that same record set.
+
+- One TXT value per item, written **without** surrounding quotes. StackRamp quotes and escapes them.
+- Values longer than 255 characters (e.g. a 2048-bit DKIM key) are split into 255-character strings automatically, which is how DNS stores long TXT values.
+- Values must be non-empty strings and must not contain `${` or `%{`.
+- Prod only, like an explicit `domain`. Ignored for subdomains, external (unmanaged) domains and Kubernetes apps. TXT records on other names (e.g. `google._domainkey`) are not covered; add those in the zone directly.
 
 ---
 

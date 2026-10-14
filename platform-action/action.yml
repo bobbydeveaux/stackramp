@@ -47,6 +47,9 @@ outputs:
   custom_domain:
     description: "Custom domain from stackramp.yaml, or {app_name}.{STACKRAMP_BASE_DOMAIN} if base domain is set"
     value: ${{ steps.parse.outputs.custom_domain }}
+  domain_txt:
+    description: "JSON array of extra TXT values for the apex of an apex custom domain (domain_txt). [] when none."
+    value: ${{ steps.parse.outputs.domain_txt }}
   has_storage:
     description: "Whether the app uses GCS storage"
     value: ${{ steps.parse.outputs.has_storage }}
@@ -188,6 +191,31 @@ runs:
           CUSTOM_DOMAIN="${APP_NAME}.${STACKRAMP_BASE_DOMAIN}"
         else
           CUSTOM_DOMAIN=""
+        fi
+
+        # Extra TXT values kept at the zone apex alongside the hosting-site
+        # verification record (SPF, google-site-verification, ...). Cloud DNS
+        # holds one TXT record set per name, so they must live in the same set
+        # Terraform owns. Compact JSON array of strings; [] when unset.
+        DOMAIN_TXT_TYPE=$(yq '.domain_txt | type' "$CONFIG")
+        case "$DOMAIN_TXT_TYPE" in
+          '!!null') DOMAIN_TXT="[]" ;;
+          '!!seq')
+            if [ "$(yq '[.domain_txt[] | select(type != "!!str" or . == "")] | length' "$CONFIG")" != "0" ]; then
+              echo "::error::domain_txt must be a list of non-empty strings (one TXT value each)."
+              exit 1
+            fi
+            # The list reaches Terraform as an HCL literal on the command line,
+            # where ${ and %{ would start a template. No TXT value needs them.
+            if [ "$(yq '[.domain_txt[] | select(test("[$%]\\{"))] | length' "$CONFIG")" != "0" ]; then
+              echo "::error::domain_txt values must not contain '\${' or '%{'."
+              exit 1
+            fi
+            DOMAIN_TXT=$(yq -o=json -I=0 '.domain_txt' "$CONFIG") ;;
+          *) echo "::error::domain_txt must be a list of strings, e.g. domain_txt: [\"v=spf1 include:_spf.google.com ~all\"]."; exit 1 ;;
+        esac
+        if [ "$DOMAIN_TXT" != "[]" ] && { [ -z "$EXPLICIT_DOMAIN" ] || [ "$EXPLICIT_DOMAIN" = "null" ]; }; then
+          echo "::warning::domain_txt is set but domain is not; the values only apply to an apex custom domain in a managed Cloud DNS zone."
         fi
 
         HAS_FRONTEND="false"
@@ -447,6 +475,7 @@ runs:
         echo "storage_type=$STORAGE_TYPE" >> $GITHUB_OUTPUT
         echo "storage_buckets=$STORAGE_BUCKETS" >> $GITHUB_OUTPUT
         echo "custom_domain=$CUSTOM_DOMAIN" >> $GITHUB_OUTPUT
+        echo "domain_txt=$DOMAIN_TXT" >> $GITHUB_OUTPUT
         echo "has_sso=$HAS_SSO" >> $GITHUB_OUTPUT
         echo "migrate_command=$MIGRATE_COMMAND" >> $GITHUB_OUTPUT
         echo "security_enabled=$SECURITY_ENABLED" >> $GITHUB_OUTPUT
