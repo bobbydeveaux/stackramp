@@ -15,6 +15,13 @@ RUN rm -f /docker-entrypoint.d/10-listen-on-ipv6-by-default.sh
 
 COPY dist /usr/share/nginx/html
 
+# The stock mime.types maps js to application/javascript but has no entry
+# for mjs, so a .mjs file goes out as application/octet-stream and the
+# browser refuses to run it as a module script or worker (Vite emits
+# pdf.js's worker, among others, as .mjs). Add mjs beside js.
+RUN sed -i 's#application/javascript \( *\)js;#application/javascript \1js mjs;#' /etc/nginx/mime.types \
+    && grep -q 'js mjs;' /etc/nginx/mime.types
+
 # Generate nginx config — with optional /api reverse proxy
 RUN { \
     echo 'server {'; \
