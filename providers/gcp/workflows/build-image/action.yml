@@ -1,0 +1,123 @@
+name: "Build image (GCP Artifact Registry)"
+description: >
+  Build a service image once per commit and push it under one or more image
+  names. Skips the build when every image for this tag already exists (the
+  prod deploy reuses the image the dev deploy / pre-build job pushed). Uses
+  BuildKit with a registry layer cache in Artifact Registry, and pulls Docker
+  Hub base images through mirror.gcr.io (avoids Docker Hub 429s). Expects the
+  caller to have authenticated to Google Cloud already.
+
+inputs:
+  context:
+    description: "Build context dir (the service dir). A Dockerfile there wins over the platform one."
+    required: true
+  language:
+    description: "Language for the platform Dockerfile when the dir has none (go, python, node, rust)"
+    required: false
+    default: ""
+  images:
+    description: "Space-separated image names (e.g. 'myapp myapp-worker'), all pushed from one build"
+    required: true
+  registry:
+    description: "Registry path, e.g. europe-west1-docker.pkg.dev/my-project/stackramp-images"
+    required: true
+  tag:
+    description: "Image tag (the commit SHA)"
+    required: true
+
+outputs:
+  image:
+    description: "Full ref of the first image (registry/name:tag)"
+    value: ${{ steps.plan.outputs.image }}
+  built:
+    description: "true when this step built and pushed; false when the images already existed"
+    value: ${{ steps.plan.outputs.build }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Check for an existing image
+      id: plan
+      shell: bash
+      env:
+        REGISTRY: ${{ inputs.registry }}
+        IMAGES: ${{ inputs.images }}
+        TAG: ${{ inputs.tag }}
+      run: |
+        gcloud auth configure-docker "${REGISTRY%%/*}" --quiet >/dev/null 2>&1 || true
+        FIRST=""; BUILD=false
+        for NAME in $IMAGES; do
+          REF="${REGISTRY}/${NAME}:${TAG}"
+          [ -z "$FIRST" ] && FIRST="$REF"
+          if docker manifest inspect "$REF" >/dev/null 2>&1; then
+            echo "Exists: $REF"
+          else
+            echo "Missing: $REF"
+            BUILD=true
+          fi
+        done
+        echo "image=$FIRST" >> "$GITHUB_OUTPUT"
+        echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+        [ "$BUILD" = "false" ] && echo "Image for this commit already pushed — skipping the build."
+        exit 0
+
+    # BuildKit in a container so the layer cache can be exported to the
+    # registry. Its own image and Docker Hub base images come via mirror.gcr.io.
+    # If this fails for any reason the build below falls back to plain docker.
+    - name: Set up Docker Buildx
+      id: buildx
+      if: steps.plan.outputs.build == 'true'
+      continue-on-error: true
+      uses: docker/setup-buildx-action@v3
+      with:
+        driver-opts: image=mirror.gcr.io/moby/buildkit:buildx-stable-1
+        buildkitd-config-inline: |
+          [registry."docker.io"]
+            mirrors = ["mirror.gcr.io"]
+
+    - name: Build and push
+      if: steps.plan.outputs.build == 'true'
+      shell: bash
+      env:
+        REGISTRY: ${{ inputs.registry }}
+        IMAGES: ${{ inputs.images }}
+        TAG: ${{ inputs.tag }}
+        CONTEXT: ${{ inputs.context }}
+        LANGUAGE: ${{ inputs.language }}
+        BUILDX_OK: ${{ steps.buildx.outcome == 'success' }}
+        PLATFORM_DOCKERFILES: ${{ github.action_path }}/../../../../platform-action/dockerfiles
+      run: |
+        set -euo pipefail
+        if [ -f "${CONTEXT}/Dockerfile" ]; then
+          echo "Using custom Dockerfile from ${CONTEXT}/Dockerfile"
+          DOCKERFILE="${CONTEXT}/Dockerfile"
+        else
+          echo "Using platform Dockerfile for ${LANGUAGE}"
+          DOCKERFILE="${PLATFORM_DOCKERFILES}/${LANGUAGE}.Dockerfile"
+        fi
+
+        TAGS=(); FIRST_NAME=""
+        for NAME in $IMAGES; do
+          [ -z "$FIRST_NAME" ] && FIRST_NAME="$NAME"
+          TAGS+=(-t "${REGISTRY}/${NAME}:${TAG}")
+        done
+        CACHE="${REGISTRY}/${FIRST_NAME}:buildcache"
+
+        if [ "$BUILDX_OK" = "true" ]; then
+          # One build, pushed under every name. mode=max caches every stage
+          # (e.g. go mod download in a builder stage), ignore-error keeps a
+          # cache hiccup from failing a deploy. provenance=false keeps a plain
+          # single-platform image, as the classic builder produced.
+          docker buildx build \
+            "${TAGS[@]}" \
+            -f "$DOCKERFILE" \
+            --provenance=false \
+            --cache-from "type=registry,ref=${CACHE}" \
+            --cache-to "type=registry,ref=${CACHE},mode=max,image-manifest=true,oci-mediatypes=true,ignore-error=true" \
+            --push \
+            "$CONTEXT"
+        else
+          echo "::warning::Buildx unavailable — building without the layer cache."
+          docker build "${TAGS[@]}" -f "$DOCKERFILE" "$CONTEXT"
+          for NAME in $IMAGES; do docker push "${REGISTRY}/${NAME}:${TAG}"; done
+        fi
