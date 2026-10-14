@@ -73,12 +73,17 @@ runs:
     # List every changed file. paths-filter knows how to diff each event type
     # (push: before..after; pull_request: the whole PR vs its base). If it
     # cannot produce a list, the detect step falls back to deploying all.
+    # base = the pushed branch makes a push to ANY branch diff the pushed
+    # range (before..after); paths-filter's default base is the default
+    # branch, which on a non-default branch would diff the whole branch.
+    # Ignored for pull_request events.
     - name: List changed files
       id: filter
       if: inputs.force_reason == ''
       continue-on-error: true
       uses: dorny/paths-filter@v3
       with:
+        base: ${{ github.event_name == 'push' && github.ref_name || '' }}
         list-files: json
         filters: |
           all:
