@@ -162,6 +162,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────────
   # 1.5a. Security scan (Guardian) — in parallel with image builds and
   # provisioning; blocks every deploy job. Skipped when nothing deploys.
+  # Prebuilt image from GHCR (no per-run docker build, no Docker Hub pulls).
   # ─────────────────────────────────────────────────────────────────────────────
   security-scan:
     name: Security scan
@@ -178,16 +179,16 @@ jobs:
           fetch-depth: 0
 
       - name: Guardian Security Scan
-        uses: bobbydeveaux/guardian@main
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          scan_osv: ${{ needs.parse-config.outputs.security_scan_osv }}
-          scan_secrets: ${{ needs.parse-config.outputs.security_scan_secrets }}
-          scan_sast: ${{ needs.parse-config.outputs.security_scan_sast }}
-          fail_on_findings: ${{ needs.parse-config.outputs.security_fail_on_findings }}
+        uses: docker://ghcr.io/bobbydeveaux/guardian:main
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          INPUT_SCAN_OSV: ${{ needs.parse-config.outputs.security_scan_osv }}
+          INPUT_SCAN_SECRETS: ${{ needs.parse-config.outputs.security_scan_secrets }}
+          INPUT_SCAN_SAST: ${{ needs.parse-config.outputs.security_scan_sast }}
+          INPUT_FAIL_ON_FINDINGS: ${{ needs.parse-config.outputs.security_fail_on_findings }}
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # 1.5b. Quality gate (Pulse) — same placement as the scan.
+  # 1.5b. Quality gate (Pulse) — same placement and image source as the scan.
   # ─────────────────────────────────────────────────────────────────────────────
   quality-gate:
     name: Quality gate
@@ -204,13 +205,13 @@ jobs:
           fetch-depth: 0
 
       - name: Pulse Quality Gate
-        uses: bobbydeveaux/pulse@main
-        with:
-          max_ccn: ${{ needs.parse-config.outputs.quality_max_ccn }}
-          max_cognitive: ${{ needs.parse-config.outputs.quality_max_cognitive }}
-          max_duplication: ${{ needs.parse-config.outputs.quality_max_duplication }}
-          min_maintainability: ${{ needs.parse-config.outputs.quality_min_maintainability }}
-          fail_on_gate: ${{ needs.parse-config.outputs.quality_fail_on_gate }}
+        uses: docker://ghcr.io/bobbydeveaux/pulse:main
+        env:
+          INPUT_MAX_CCN: ${{ needs.parse-config.outputs.quality_max_ccn }}
+          INPUT_MAX_COGNITIVE: ${{ needs.parse-config.outputs.quality_max_cognitive }}
+          INPUT_MAX_DUPLICATION: ${{ needs.parse-config.outputs.quality_max_duplication }}
+          INPUT_MIN_MAINTAINABILITY: ${{ needs.parse-config.outputs.quality_min_maintainability }}
+          INPUT_FAIL_ON_GATE: ${{ needs.parse-config.outputs.quality_fail_on_gate }}
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 1.5c. Pre-build Cloud Run images, in parallel with the scans. One build per
