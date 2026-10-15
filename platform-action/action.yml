@@ -184,6 +184,16 @@ runs:
         BACKEND_PORT=$(yq '.backend.port // 8080' "$CONFIG")
         MIN_INSTANCES=$(yq '.backend.min_instances // 0' "$CONFIG")
         MAX_INSTANCES=$(yq '.backend.max_instances // 10' "$CONFIG")
+        # It reaches jq --argjson and gcloud --max-instances: reject anything
+        # but a positive integer here, with a clear error, not mid-deploy.
+        if ! [[ "$MAX_INSTANCES" =~ ^[1-9][0-9]*$ ]]; then
+          echo "::error::backend.max_instances must be a positive integer (got '$MAX_INSTANCES')."
+          exit 1
+        fi
+        if [[ "$MIN_INSTANCES" =~ ^[0-9]+$ ]] && [ "$MIN_INSTANCES" -gt "$MAX_INSTANCES" ]; then
+          echo "::error::backend.min_instances ($MIN_INSTANCES) must not exceed backend.max_instances ($MAX_INSTANCES)."
+          exit 1
+        fi
         DATABASE=$(yq '.database // false' "$CONFIG")
         PROVIDER="${STACKRAMP_PROVIDER:-$(yq '.provider.cloud // "gcp"' "$CONFIG")}"
 
