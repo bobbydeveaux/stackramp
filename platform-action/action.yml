@@ -38,6 +38,9 @@ outputs:
   min_instances:
     description: "Minimum Cloud Run instances (default 0)"
     value: ${{ steps.parse.outputs.min_instances }}
+  max_instances:
+    description: "Maximum Cloud Run instances for the primary backend (default 10)"
+    value: ${{ steps.parse.outputs.max_instances }}
   has_database:
     description: "Whether the app uses a database"
     value: ${{ steps.parse.outputs.has_database }}
@@ -180,6 +183,7 @@ runs:
         BACKEND_DIR=$(yq '.backend.dir // "backend"' "$CONFIG")
         BACKEND_PORT=$(yq '.backend.port // 8080' "$CONFIG")
         MIN_INSTANCES=$(yq '.backend.min_instances // 0' "$CONFIG")
+        MAX_INSTANCES=$(yq '.backend.max_instances // 10' "$CONFIG")
         DATABASE=$(yq '.database // false' "$CONFIG")
         PROVIDER="${STACKRAMP_PROVIDER:-$(yq '.provider.cloud // "gcp"' "$CONFIG")}"
 
@@ -427,8 +431,8 @@ runs:
           # access: iap ≡ sso: true — flow it through the existing IAP plumbing.
           [ "$B_ACCESS" = "iap" ] && HAS_SSO="true"
           BACKENDS=$(jq -c --arg l "$BACKEND_LANG" --arg d "$BACKEND_DIR" --argjson p "$BACKEND_PORT" \
-            --arg a "$B_ACCESS" --argjson m "$MIN_INSTANCES" \
-            '. + [{name:"",language:$l,dir:$d,port:$p,memory:"512Mi",cpu:"1",min_instances:$m,max_instances:10,always_on:false,timeout:300,access:$a,service_accounts:""}]' <<<"$BACKENDS")
+            --arg a "$B_ACCESS" --argjson m "$MIN_INSTANCES" --argjson mx "$MAX_INSTANCES" \
+            '. + [{name:"",language:$l,dir:$d,port:$p,memory:"512Mi",cpu:"1",min_instances:$m,max_instances:$mx,always_on:false,timeout:300,access:$a,service_accounts:""}]' <<<"$BACKENDS")
         fi
         BACKENDS_LEN=$(yq '.backends | length' "$CONFIG" 2>/dev/null || echo 0)
         { [ -z "$BACKENDS_LEN" ] || [ "$BACKENDS_LEN" = "null" ]; } && BACKENDS_LEN=0
@@ -469,6 +473,7 @@ runs:
         echo "backend_dir=$BACKEND_DIR" >> $GITHUB_OUTPUT
         echo "backend_port=$BACKEND_PORT" >> $GITHUB_OUTPUT
         echo "min_instances=$MIN_INSTANCES" >> $GITHUB_OUTPUT
+        echo "max_instances=$MAX_INSTANCES" >> $GITHUB_OUTPUT
         echo "has_database=$HAS_DATABASE" >> $GITHUB_OUTPUT
         echo "provider=$PROVIDER" >> $GITHUB_OUTPUT
         echo "has_storage=$HAS_STORAGE" >> $GITHUB_OUTPUT
