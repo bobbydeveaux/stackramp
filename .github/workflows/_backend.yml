@@ -80,6 +80,11 @@ on:
         required: false
         default: "0"
         description: "Minimum number of Cloud Run instances to keep warm. Default 0 (scale to zero)."
+      max_instances:
+        type: string
+        required: false
+        default: "10"
+        description: "Maximum number of Cloud Run instances (backend.max_instances). Default 10."
       sso:
         type: string
         required: false
@@ -264,7 +269,7 @@ jobs:
             --memory="${{ inputs.memory }}"
             --cpu="${{ inputs.cpu }}"
             --min-instances=${{ inputs.min_instances }}
-            --max-instances=10
+            --max-instances=${{ inputs.max_instances }}
             --timeout=300
             --cpu-throttling
             --project="${{ inputs.platform_project }}"
