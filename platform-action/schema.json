@@ -72,6 +72,11 @@
           "type": "string",
           "default": "1"
         },
+        "max_instances": {
+          "type": "integer",
+          "default": 10,
+          "description": "Most Cloud Run instances for this backend. Lower it to bound database connections (instances x pool size)."
+        },
         "public": {
           "type": "boolean",
           "default": false,
