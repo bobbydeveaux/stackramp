@@ -90,6 +90,7 @@ jobs:
       storage_buckets: ${{ steps.config.outputs.storage_buckets }}
       has_sso: ${{ steps.config.outputs.has_sso }}
       min_instances: ${{ steps.config.outputs.min_instances }}
+      max_instances: ${{ steps.config.outputs.max_instances }}
       migrate_command: ${{ steps.config.outputs.migrate_command }}
       security_enabled: ${{ steps.config.outputs.security_enabled }}
       security_scan_osv: ${{ steps.config.outputs.security_scan_osv }}
@@ -574,6 +575,7 @@ jobs:
       vpc_connector: ${{ vars.STACKRAMP_VPC_CONNECTOR || '' }}
       database_secret_name: ${{ needs.provision.outputs.database_secret_name_dev }}
       min_instances: ${{ needs.parse-config.outputs.min_instances }}
+      max_instances: ${{ needs.parse-config.outputs.max_instances }}
       sso: ${{ needs.parse-config.outputs.has_sso }}
       frontend_sa: ${{ vars.STACKRAMP_FRONTEND_SA || '' }}
       migrate_command: ${{ needs.parse-config.outputs.migrate_command }}
@@ -760,6 +762,7 @@ jobs:
       vpc_connector: ${{ vars.STACKRAMP_VPC_CONNECTOR || '' }}
       database_secret_name: ${{ needs.provision.outputs.database_secret_name_prod }}
       min_instances: ${{ needs.parse-config.outputs.min_instances }}
+      max_instances: ${{ needs.parse-config.outputs.max_instances }}
       sso: ${{ needs.parse-config.outputs.has_sso }}
       frontend_sa: ${{ vars.STACKRAMP_FRONTEND_SA || '' }}
       migrate_command: ${{ needs.parse-config.outputs.migrate_command }}
