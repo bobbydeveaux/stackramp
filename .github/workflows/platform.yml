@@ -216,7 +216,9 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────────
   # 1.5c. Pre-build Cloud Run images, in parallel with the scans. One build per
   # source dir (the API and a worker built from the same dir share it), pushed
-  # under each service's image name, tagged with the commit SHA. Pushing an
+  # under each service's image name, tagged <commit SHA>-<fingerprint of the
+  # platform build inputs> (computed by build-image, so a StackRamp Dockerfile
+  # or build change rebuilds even for an unchanged app commit). Pushing an
   # image deploys nothing; the deploy jobs (which wait for the scans) find it
   # and skip their own build, and so does prod after dev.
   # ─────────────────────────────────────────────────────────────────────────────

@@ -130,8 +130,9 @@ jobs:
         with:
           skip_install: ${{ steps.gcloud.outputs.preinstalled == 'true' }}
 
-      # Built once per commit: skipped when the image already exists (pushed by
-      # the platform's pre-build job, or by the dev deploy for prod).
+      # Built once per commit and platform version: tagged <sha>-<platform
+      # fingerprint> by the action and skipped when that image already exists
+      # (pushed by the platform's pre-build job, or by the dev deploy for prod).
       - name: Build Docker image
         id: build
         uses: bobbydeveaux/stackramp/providers/gcp/workflows/build-image@main
