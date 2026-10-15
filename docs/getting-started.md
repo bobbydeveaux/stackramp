@@ -123,6 +123,8 @@ on:
   push:
     branches: [main]
   pull_request:
+    # `closed` is required: without it the PR preview cleanup never runs
+    types: [opened, synchronize, reopened, closed]
   workflow_dispatch:
 
 jobs:
