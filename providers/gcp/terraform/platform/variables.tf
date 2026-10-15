@@ -37,6 +37,24 @@ variable "domain_is_apex" {
   default     = false
 }
 
+variable "domain_txt" {
+  description = <<-EOT
+    Extra TXT values for the apex of an apex custom domain (stackramp.yaml
+    domain_txt), e.g. SPF or google-site-verification. Cloud DNS allows one TXT
+    record set per name, so they share the record set that holds the
+    hosting-site verification value. One string per TXT value, unquoted; values
+    over 255 characters are split into 255-character strings. Only applies when
+    custom_domain is the apex of a managed Cloud DNS zone (not Kubernetes apps).
+  EOT
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for v in var.domain_txt : v != ""])
+    error_message = "domain_txt values must be non-empty."
+  }
+}
+
 variable "backend_domain" {
   description = "Custom domain for the backend API (e.g. api.stackramp.io). Computed automatically from custom_domain. Empty = no custom domain."
   type        = string

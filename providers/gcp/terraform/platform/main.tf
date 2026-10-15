@@ -104,6 +104,16 @@ locals {
   # Firebase's ACME challenge fail on it and blocks cert minting.)
   firebase_a_records = ["199.36.158.100"]
 
+  # Apex TXT values from stackramp.yaml domain_txt. Each value becomes one TXT
+  # record: quotes and backslashes escaped, split into quoted 255-character
+  # strings (the DNS limit per string; resolvers join them back together).
+  domain_txt_rrdatas = [
+    for v in var.domain_txt : join(" ", [
+      for i in range(0, length(v), 255) :
+      "\"${replace(replace(substr(v, i, 255), "\\", "\\\\"), "\"", "\\\"")}\""
+    ])
+  ]
+
   # Subdomain CNAME target — Cloud Run domain mapping for SSO apps, Firebase site for Firebase apps
   cname_target = var.has_sso ? "ghs.googlehosted.com." : (length(google_firebase_hosting_site.app) > 0 ? "${google_firebase_hosting_site.app[0].site_id}.web.app." : "")
 
@@ -146,14 +156,20 @@ resource "google_dns_record_set" "frontend_a" {
 # site owns the domain, so Firebase auto-verifies and mints the SSL cert with
 # no manual TXT step. site_id is known at plan time, so this is deterministic.
 # Subdomains verify via their CNAME, so they don't need this.
+# Cloud DNS allows one TXT record set per name, so any other apex TXT values
+# (SPF, google-site-verification, ...) come from domain_txt and live here too;
+# adding them by hand would conflict on create or be reverted on apply.
 resource "google_dns_record_set" "frontend_verify" {
-  count        = local.dns_enabled && !local.is_subdomain && !var.has_sso ? 1 : 0
+  count        = local.dns_enabled && !local.is_subdomain && (!var.has_sso || length(var.domain_txt) > 0) ? 1 : 0
   name         = "${var.custom_domain}."
   type         = "TXT"
   ttl          = 300
   managed_zone = var.dns_zone_name
   project      = var.platform_project
-  rrdatas      = ["\"hosting-site=${google_firebase_hosting_site.app[0].site_id}\""]
+  rrdatas = concat(
+    var.has_sso ? [] : ["\"hosting-site=${google_firebase_hosting_site.app[0].site_id}\""],
+    local.domain_txt_rrdatas,
+  )
 }
 
 # Subdomain CNAME — single resource so transitioning between Firebase and SSO Cloud Run

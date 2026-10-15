@@ -246,7 +246,11 @@ any app can set `domain: flowbydeveaux.co.uk` (or a subdomain of it) and the
 platform will detect the zone and manage records automatically.
 
 > **Note:** delegating nameservers moves *all* DNS for that domain into Cloud DNS —
-> recreate any existing records (email/MX, etc.) in the zone. If you'd rather keep
+> recreate any existing records (email/MX, etc.) in the zone. TXT values at the
+> apex (SPF, `google-site-verification=...`) are the exception when an app uses the
+> apex as its `domain`: StackRamp owns the apex TXT record set, so list them under
+> `domain_txt:` in that app's `stackramp.yaml` instead of adding them by hand
+> (see the [reference](docs/stackramp-yaml-reference.md#domain_txt-optional)). If you'd rather keep
 > DNS at your registrar, simply **don't** add the domain to `custom_domains`: the
 > app still deploys and you add the Firebase-reported records at your registrar
 > (external mode above).

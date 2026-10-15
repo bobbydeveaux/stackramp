@@ -84,6 +84,7 @@ jobs:
       config_changed: ${{ steps.changes.outputs.config_changed }}
       is_pr: ${{ github.event_name == 'pull_request' }}
       custom_domain: ${{ steps.config.outputs.custom_domain }}
+      domain_txt: ${{ steps.config.outputs.domain_txt }}
       has_storage: ${{ steps.config.outputs.has_storage }}
       storage_type: ${{ steps.config.outputs.storage_type }}
       storage_buckets: ${{ steps.config.outputs.storage_buckets }}
@@ -366,6 +367,7 @@ jobs:
         id: plan
         env:
           BUCKETS_JSON: ${{ needs.parse-config.outputs.storage_buckets }}
+          DOMAIN_TXT_JSON: ${{ needs.parse-config.outputs.domain_txt }}
           FORCE_PROVISION: ${{ inputs.provision == true || github.event.inputs.provision == 'true' || github.event.inputs.provision == true || github.event_name == 'schedule' }}
           CONFIG_CHANGED: ${{ needs.parse-config.outputs.config_changed }}
         run: |
@@ -397,7 +399,7 @@ jobs:
             [ -n "$CUSTOM_DOMAIN" ] && [ "$HAS_BACKEND" = "true" ] && BACKEND_DOMAIN="api.${CUSTOM_DOMAIN}"
 
             # One -var per line; the apply step reads them back as an array.
-            # buckets_json carries quotes/spaces, so it rides as a single line too.
+            # buckets_json and domain_txt carry quotes/spaces, so each rides as a single line too.
             VARS_FILE="$RUNNER_TEMP/tfvars-$ENV.txt"
             cat > "$VARS_FILE" <<EOF
           -var=app_name=${APP}
@@ -420,6 +422,7 @@ jobs:
           -var=kubernetes_namespace=${{ needs.parse-config.outputs.kubernetes_namespace }}
           -var=gke_gateway_ip=${{ vars.STACKRAMP_GKE_GATEWAY_IP }}
           -var=buckets_json=${BUCKETS_JSON:-[]}
+          -var=domain_txt=${DOMAIN_TXT_JSON:-[]}
           EOF
             # Strip the YAML block indentation the heredoc keeps.
             sed -i 's/^ *//' "$VARS_FILE"
