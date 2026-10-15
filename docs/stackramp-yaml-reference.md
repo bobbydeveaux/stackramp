@@ -212,6 +212,15 @@ Memory allocation for the backend service. Examples: `256Mi`, `512Mi`, `1Gi`, `2
 
 CPU allocation for the backend service. Examples: `1`, `2`, `4`.
 
+#### `backend.max_instances`
+
+| | |
+|---|---|
+| Type | `integer` |
+| Default | `10` |
+
+The most Cloud Run instances the backend scales to. Lower it when every instance holds database connections, so instances × pool size stays within the database's connection limit (for example 3 instances × 5 connections = 15 on a small shared instance). Entries in `backends:` take the same field.
+
 ---
 
 ### `database`
