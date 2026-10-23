@@ -57,7 +57,7 @@ variable "create_dns_zone" {
 }
 
 variable "platform_secrets" {
-  description = "Secret names to create in Secret Manager as platform-injectable. Values are set manually in the GCP Console after apply — never committed here."
+  description = "Secret names to create in Secret Manager as platform-injectable. Values are set manually in the GCP Console after apply — never committed here. Mounted into every app's services unless scoped with the platform-app / platform-env labels (see main.tf)."
   type        = list(string)
   default     = []
 }

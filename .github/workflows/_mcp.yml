@@ -159,7 +159,21 @@ jobs:
       - name: Export image ref
         run: echo "IMAGE=${{ steps.build.outputs.image }}" >> "$GITHUB_ENV"
 
+      # Platform secrets for this app and environment: platform-inject=true,
+      # narrowed by the optional platform-app / platform-env labels. One
+      # shared action so every deploy path applies the same rules.
+      - name: Discover platform secrets
+        id: platform_secrets
+        uses: bobbydeveaux/stackramp/providers/gcp/workflows/platform-secrets@main
+        with:
+          project: ${{ inputs.platform_project }}
+          app_name: ${{ inputs.app_name }}
+          environment: ${{ inputs.environment }}
+
       - name: Deploy to Cloud Run
+        env:
+          PLATFORM_SECRET_REFS: ${{ steps.platform_secrets.outputs.secret_refs }}
+          PLATFORM_CLEAR_SECRETS: ${{ steps.platform_secrets.outputs.clear_secrets }}
         run: |
           SERVICE_NAME="${{ inputs.app_name }}-${{ inputs.name }}-${{ inputs.environment }}"
 
@@ -172,15 +186,8 @@ jobs:
             ENV_VARS="${ENV_VARS},STACKRAMP_SERVICE_ACCOUNTS=${{ inputs.service_accounts }},MCP_SERVICE_ACCOUNTS=${{ inputs.service_accounts }}"
           fi
 
-          SECRET_REFS=""
-          PLATFORM_SECRETS=$(gcloud secrets list \
-            --filter="labels.platform-inject=true" \
-            --format="value(name)" \
-            --project="${{ inputs.platform_project }}")
-          for SECRET_RESOURCE in $PLATFORM_SECRETS; do
-            SECRET_NAME=$(basename "$SECRET_RESOURCE")
-            SECRET_REFS="${SECRET_REFS:+$SECRET_REFS,}${SECRET_NAME}=${SECRET_NAME}:latest"
-          done
+          # Platform secrets for this app and environment (platform-secrets step).
+          SECRET_REFS="${PLATFORM_SECRET_REFS}"
           # App DATABASE_URL (same secret _backend.yml mounts) — so an ingest/
           # machine service can WRITE to the app DB the backend reads.
           if [ -n "${{ inputs.database_secret_name }}" ]; then
@@ -223,7 +230,13 @@ jobs:
           else
             DEPLOY_FLAGS+=(--no-allow-unauthenticated)
           fi
-          [ -n "$SECRET_REFS" ] && DEPLOY_FLAGS+=(--set-secrets="$SECRET_REFS")
+          if [ -n "$SECRET_REFS" ]; then
+            DEPLOY_FLAGS+=(--set-secrets="$SECRET_REFS")
+          elif [ "$PLATFORM_CLEAR_SECRETS" = "true" ]; then
+            # Every platform secret is scoped to other apps/envs: take off
+            # any this service still has (see the platform-secrets action).
+            DEPLOY_FLAGS+=(--clear-secrets)
+          fi
           [ -n "${{ inputs.vpc_connector }}" ] && DEPLOY_FLAGS+=(--vpc-connector="${{ inputs.vpc_connector }}" --vpc-egress=all-traffic)
           [ -n "${{ inputs.cloudsql_connection_name }}" ] && DEPLOY_FLAGS+=(--add-cloudsql-instances="${{ inputs.cloudsql_connection_name }}")
 

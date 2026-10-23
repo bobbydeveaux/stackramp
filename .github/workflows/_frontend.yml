@@ -199,22 +199,29 @@ jobs:
           docker push "$IMAGE"
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
 
+      # Platform secrets for this app and environment: platform-inject=true,
+      # narrowed by the optional platform-app / platform-env labels. One
+      # shared action so every deploy path applies the same rules.
+      - name: Discover platform secrets
+        if: inputs.sso == 'true' && inputs.is_pr != 'true'
+        id: platform_secrets
+        uses: bobbydeveaux/stackramp/providers/gcp/workflows/platform-secrets@main
+        with:
+          project: ${{ inputs.platform_project }}
+          app_name: ${{ inputs.app_name }}
+          environment: ${{ inputs.environment }}
+
       - name: Deploy to Cloud Run (SSO)
         if: inputs.sso == 'true' && inputs.is_pr != 'true'
         id: deploy-sso
+        env:
+          PLATFORM_SECRET_REFS: ${{ steps.platform_secrets.outputs.secret_refs }}
+          PLATFORM_CLEAR_SECRETS: ${{ steps.platform_secrets.outputs.clear_secrets }}
         run: |
           FRONTEND_PORT=${{ inputs.frontend_framework == 'next' && '3000' || '8080' }}
 
           # ── Secret refs (mounted by Cloud Run directly from Secret Manager) ─
-          SECRET_REFS=""
-          PLATFORM_SECRETS=$(gcloud secrets list \
-            --filter="labels.platform-inject=true" \
-            --format="value(name)" \
-            --project="${{ inputs.platform_project }}")
-          for SECRET_RESOURCE in $PLATFORM_SECRETS; do
-            SECRET_NAME=$(basename "$SECRET_RESOURCE")
-            SECRET_REFS="${SECRET_REFS:+$SECRET_REFS,}${SECRET_NAME}=${SECRET_NAME}:latest"
-          done
+          SECRET_REFS="${PLATFORM_SECRET_REFS}"
 
           DEPLOY_FLAGS=(
             --image="$IMAGE"
@@ -225,7 +232,13 @@ jobs:
             --ingress=all
             --project="${{ inputs.platform_project }}"
           )
-          [ -n "$SECRET_REFS" ] && DEPLOY_FLAGS+=(--set-secrets="$SECRET_REFS")
+          if [ -n "$SECRET_REFS" ]; then
+            DEPLOY_FLAGS+=(--set-secrets="$SECRET_REFS")
+          elif [ "$PLATFORM_CLEAR_SECRETS" = "true" ]; then
+            # Every platform secret is scoped to other apps/envs: take off
+            # any this service still has (see the platform-secrets action).
+            DEPLOY_FLAGS+=(--clear-secrets)
+          fi
           [ -n "${{ inputs.frontend_sa }}" ] && DEPLOY_FLAGS+=(--service-account="${{ inputs.frontend_sa }}")
           # Go proxy reads BACKEND_URL at runtime for /api/* proxying
           [ -n "${{ inputs.backend_url }}" ] && DEPLOY_FLAGS+=(--set-env-vars="BACKEND_URL=${{ inputs.backend_url }}")

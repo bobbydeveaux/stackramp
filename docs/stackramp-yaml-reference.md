@@ -387,10 +387,11 @@ the fingerprint stored after the last successful apply, in the state bucket
 next to the state. It also applies when `stackramp.yaml` changed, on scheduled
 runs, and when the `provision: true` workflow input (or a `workflow_dispatch`
 input named `provision`) is set. Otherwise it reads the outputs from the
-Terraform state in a few seconds. Platform-wide secrets (label
-`platform-inject=true`) are not Terraform inputs: each deploy lists and mounts
-them, so a new secret reaches a service on that service's next deploy (run the
-workflow manually to roll it out everywhere).
+Terraform state in a few seconds. Platform secrets (label
+`platform-inject=true`, see [Platform secrets](#platform-secrets-secret-manager-labels))
+are not Terraform inputs: each deploy lists and mounts them, so a new secret
+reaches a service on that service's next deploy (run the workflow manually to
+roll it out everywhere).
 
 Recommended caller setup (manual full deploy, forced provisioning, a weekly
 full deploy as a safety net):
@@ -414,6 +415,72 @@ on:
 Dry run: call the workflow with `dry_run: true` to see the plan (which services
 would deploy, whether Terraform would apply) in the run summary. Nothing is
 built, scanned, applied or deployed.
+
+---
+
+## Platform secrets (Secret Manager labels)
+
+Platform secrets are not set in `stackramp.yaml`: the platform operator
+creates them in Secret Manager in the platform project (the bootstrap
+Terraform `platform_secrets` list, or by hand) and labels them. Every Cloud
+Run deploy (backend, its migrations job, MCP, machine backends in `backends:`,
+and the SSO frontend) mounts each matching secret as an env var of the same
+name, `NAME=NAME:latest`. The discovery lives in one place,
+`providers/gcp/workflows/platform-secrets`.
+
+| Label | Required | Effect |
+|---|---|---|
+| `platform-inject=true` | yes | The secret is a platform secret. Without it nothing mounts it. |
+| `platform-app=<app>` | no | Mounted only into the services of that app: `<app>` is the `name` in its `stackramp.yaml`. Absent: every app. |
+| `platform-env=<dev\|prod>` | no | Mounted only into that environment. Absent: every environment. |
+
+A secret with neither `platform-app` nor `platform-env` is mounted into every
+service, as before these labels existed.
+
+**Which services count as an app.** All of an app's services match its
+`name`: for `name: myapp`, the backend `myapp-<env>`, its migrations job, the
+MCP server `myapp-mcp-<env>`, each `backends:` entry `myapp-<backend>-<env>`
+and the SSO frontend `myapp-fe-<env>` all match `platform-app=myapp`.
+
+**Environments.** `dev` and `prod` match themselves. PR previews
+(`pr-<number>`) count as `dev`: they get unscoped and `platform-env=dev`
+secrets, never `platform-env=prod` ones.
+
+**Label values.** GCP label values allow only lowercase letters, digits, `_`
+and `-` (up to 63 characters). The app name and environment are lowercased,
+any other character becomes `-`, and they are cut to 63 characters before
+matching. An app `name` that follows the schema (`^[a-z][a-z0-9-]*$`) is used
+as it is; keep it to 63 characters or less, since two longer names that share
+their first 63 characters would match each other's `platform-app` secrets.
+
+Scope a secret (names and labels only; this never touches the value):
+
+```bash
+# only myapp's prod services
+gcloud secrets update MYAPP_PROD_API_KEY --project=<platform project> \
+  --update-labels=platform-app=myapp,platform-env=prod
+
+# undo: mounted everywhere again
+gcloud secrets update MYAPP_PROD_API_KEY --project=<platform project> \
+  --remove-labels=platform-app,platform-env
+
+# see what a service would mount
+gcloud secrets list --project=<platform project> --format="value(name.basename())" \
+  --filter="labels.platform-inject=true AND (-labels.platform-app:* OR labels.platform-app=myapp) AND (-labels.platform-env:* OR labels.platform-env=prod)"
+```
+
+> **Changes reach a service on its next deploy.** Labels are read at deploy
+> time. Adding a label (or removing `platform-inject`) takes the secret off a
+> service only when that service is next deployed, since `--set-secrets`
+> replaces the service's whole secret list then; until then the running
+> revision keeps it. The same goes for the migrations job (updated on the next
+> deploy with a `migrate_command`). Run the workflow manually (`deploy_all`)
+> to roll a relabel out to every service of an app.
+>
+> A service that ends up with no matching platform secret and no
+> `DATABASE_URL` is deployed with `--clear-secrets`, so scoped-away secrets
+> come off it too. In a project with no `platform-inject=true` secrets at all
+> no secret flag is passed, as before.
 
 ---
 

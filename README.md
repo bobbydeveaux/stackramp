@@ -207,7 +207,7 @@ Custom `Dockerfile` in your backend directory is always supported as an override
 - [x] Custom domain support (Cloud DNS, SSL auto-provisioned)
 - [x] GCS storage bucket support
 - [x] Cloud SQL (Postgres) with `DATABASE_URL` injected via Secret Manager
-- [x] Platform secrets auto-injected from Secret Manager (label-based)
+- [x] Platform secrets auto-injected from Secret Manager (label-based, optionally scoped per app and environment)
 - [x] SSO via GCP IAP — native Cloud Run IAP + Go reverse proxy for service-to-service auth
 - [x] PR preview environments — isolated per PR, auto-cleanup on close
 - [x] Deploy status dashboard — dogfooded on the platform at dashboard.stackramp.io

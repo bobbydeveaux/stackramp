@@ -304,7 +304,15 @@ resource "google_project_iam_member" "default_compute_cloudsql_client" {
 # ── Platform-Injectable Secrets ───────────────────────────────────────────────
 # Platform team creates the secret shell here; values are set manually in the
 # GCP Console. Any secret with the `platform-inject: true` label is automatically
-# discovered and injected into every Cloud Run deployment via --set-secrets.
+# discovered and injected into Cloud Run deployments via --set-secrets
+# (providers/gcp/workflows/platform-secrets). By default that is every service
+# of every app. Two optional labels narrow it, added by hand after apply:
+#   platform-app = <app name>   only that app's services (stackramp.yaml `name`)
+#   platform-env = dev | prod   only that environment (PR previews count as dev)
+# e.g. gcloud secrets update NAME --update-labels=platform-app=myapp,platform-env=prod
+# The google provider's `labels` is non-authoritative (v5+), so labels added
+# outside Terraform survive an apply. A relabel reaches a service on that
+# service's next deploy. See docs/stackramp-yaml-reference.md (Platform secrets).
 
 resource "google_secret_manager_secret" "platform" {
   for_each  = toset(var.platform_secrets)
