@@ -1,0 +1,45 @@
+name: "Platform secrets (GCP Secret Manager)"
+description: >
+  Find the platform secrets a Cloud Run service or job mounts: every secret
+  labelled platform-inject=true, narrowed by the optional labels
+  platform-app=<app name> and platform-env=<dev|prod> (PR previews count as
+  dev). A secret without those labels is mounted into every service, as
+  before. Outputs the --set-secrets refs. The one place this discovery lives:
+  _backend.yml (deploy and migrations), _mcp.yml (MCP and machine backends)
+  and _frontend.yml (SSO frontend) all use it. Expects the caller to have
+  authenticated to Google Cloud already.
+
+inputs:
+  project:
+    description: "GCP project holding the secrets (the platform project)"
+    required: true
+  app_name:
+    description: "App name (stackramp.yaml `name`), matched against platform-app"
+    required: true
+  environment:
+    description: "Deploy environment: dev, prod or pr-<n>, matched against platform-env"
+    required: true
+
+outputs:
+  secret_refs:
+    description: "Comma-joined NAME=NAME:latest refs for --set-secrets (may be empty)"
+    value: ${{ steps.discover.outputs.secret_refs }}
+  clear_secrets:
+    description: "true when the project has platform secrets but none match: with no other refs, deploy with --clear-secrets"
+    value: ${{ steps.discover.outputs.clear_secrets }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Discover platform secrets
+      id: discover
+      shell: bash
+      env:
+        PROJECT: ${{ inputs.project }}
+        APP_NAME: ${{ inputs.app_name }}
+        ENVIRONMENT: ${{ inputs.environment }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        OUT=$(bash "${ACTION_PATH}/platform-secrets.sh" "$PROJECT" "$APP_NAME" "$ENVIRONMENT")
+        echo "$OUT" >> "$GITHUB_OUTPUT"

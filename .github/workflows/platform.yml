@@ -272,8 +272,9 @@ jobs:
   # (or a workflow_dispatch input named `provision`) is true; a scheduled run;
   # or no state/fingerprint exists yet. Otherwise the job reads the outputs
   # straight from the Terraform state in GCS (seconds, no init/plan/apply).
-  # Platform-wide secrets (label platform-inject=true) are NOT Terraform
-  # inputs: deploy jobs discover and mount them at deploy time.
+  # Platform-wide secrets (label platform-inject=true, optionally scoped by
+  # platform-app / platform-env) are NOT Terraform inputs: deploy jobs
+  # discover and mount them at deploy time (platform-secrets action).
   # The job always runs when something deploys, so deploy jobs keep a plain
   # `needs.provision.result == 'success'` gate.
   # ─────────────────────────────────────────────────────────────────────────────
