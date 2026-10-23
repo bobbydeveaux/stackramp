@@ -1,0 +1,39 @@
+name: "StackRamp PR state"
+description: >
+  For a PR preview environment (pr-<n>), ask GitHub whether that pull request
+  is already closed or merged. The preview deploy jobs check it right before
+  `gcloud run deploy` (skip when closed) and again after it (delete what they
+  just created when the PR closed meanwhile), so a deploy that finishes after
+  the PR-close cleanup can't leave a preview running. dev and prod: always
+  closed=false, no API call. Fails open (closed=false) when GitHub can't be
+  asked. Needs a token that can read pull requests (`pull-requests: read`).
+
+inputs:
+  environment:
+    description: "Deploy environment: dev, prod or pr-<n>"
+    required: true
+  github_token:
+    description: "Token that can read the repo's pull requests"
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  closed:
+    description: "true when the environment is a PR preview whose PR is closed"
+    value: ${{ steps.check.outputs.closed }}
+  pr:
+    description: "PR number (empty when not a preview)"
+    value: ${{ steps.check.outputs.pr }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Check PR state
+      id: check
+      shell: bash
+      env:
+        ENVIRONMENT: ${{ inputs.environment }}
+        GH_TOKEN: ${{ inputs.github_token }}
+        REPO: ${{ github.repository }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: bash "${ACTION_PATH}/pr-closed.sh" "$ENVIRONMENT" "$REPO" >> "$GITHUB_OUTPUT"

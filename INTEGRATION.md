@@ -348,6 +348,8 @@ On every PR:
 - Firebase wires `/api/**` rewrites to the PR-scoped Cloud Run service, so the preview is fully functional
 - A comment is posted on the PR with the preview URL
 - Preview channels auto-expire after 7 days, but StackRamp actively cleans up both Cloud Run services and Firebase channels when the PR is closed or merged
+- Preview services always scale to zero with CPU throttled (`min_instances` / `always_on` apply to dev and prod only)
+- A preview deploy that would finish after its PR closed is skipped or deleted, and a sweep (after each cleanup, on scheduled runs, or daily via `_sweep-previews.yml`) removes any preview whose PR is closed; see [PR previews](docs/stackramp-yaml-reference.md#pr-previews)
 - Multiple open PRs get independent preview environments (no collisions)
 
 > **Note:** The deploy workflow must include `pull_request: types: [opened, synchronize, reopened, closed]` for cleanup to trigger on PR close.

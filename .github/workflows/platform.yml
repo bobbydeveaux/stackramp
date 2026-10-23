@@ -54,6 +54,20 @@ jobs:
     if: github.event_name == 'pull_request' && github.event.action == 'closed'
     uses: bobbydeveaux/stackramp/.github/workflows/_cleanup-preview.yml@main
     secrets: inherit
+    with:
+      config_path: ${{ inputs.config_path }}
+
+  # Scheduled runs also sweep every closed PR's leftover preview (Cloud Run
+  # services and Firebase channels). For a daily sweep without a daily full
+  # deploy, call _sweep-previews.yml from its own schedule (see that file).
+  sweep-previews:
+    name: Sweep closed PR previews
+    if: github.event_name == 'schedule'
+    uses: bobbydeveaux/stackramp/.github/workflows/_sweep-previews.yml@main
+    secrets: inherit
+    with:
+      config_path: ${{ inputs.config_path }}
+      dry_run: ${{ inputs.dry_run }}
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 1. Parse stackramp.yaml and detect what changed
