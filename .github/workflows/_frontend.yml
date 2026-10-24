@@ -385,8 +385,27 @@ jobs:
           echo "url=${URL}" >> $GITHUB_OUTPUT
           echo "Preview URL: ${URL}"
 
+      # The PR closed while the channel deployed: the close cleanup may have
+      # run already, so delete the channel this job just created.
+      - name: Check the PR is still open (after deploy)
+        id: pr_after
+        if: "!cancelled() && inputs.sso != 'true' && inputs.is_pr == 'true' && steps.pr_before.outputs.closed != 'true'"
+        uses: bobbydeveaux/stackramp/platform-action/pr-closed@main
+        with:
+          environment: pr-${{ github.event.pull_request.number }}
+          fail_open: "false"
+
+      - name: Delete the preview channel (PR closed during deploy)
+        if: "!cancelled() && steps.pr_after.outputs.closed == 'true'"
+        run: |
+          SITE_ID="${{ inputs.site_id != '' && inputs.site_id || format('{0}-dev', inputs.app_name) }}"
+          echo "::notice::PR #${{ steps.pr_after.outputs.pr }} closed during the deploy; deleting channel pr-${{ steps.pr_after.outputs.pr }} on ${SITE_ID}"
+          firebase hosting:channel:delete pr-${{ steps.pr_after.outputs.pr }} \
+            --site "$SITE_ID" --project ${{ inputs.platform_project }} --force --non-interactive \
+            || echo "::warning::Could not delete the channel; the preview sweep will"
+
       - name: Comment preview URL on PR
-        if: inputs.sso != 'true' && inputs.is_pr == 'true' && steps.pr_before.outputs.closed != 'true'
+        if: inputs.sso != 'true' && inputs.is_pr == 'true' && steps.pr_before.outputs.closed != 'true' && steps.pr_after.outputs.closed != 'true'
         uses: actions/github-script@v7
         with:
           script: |

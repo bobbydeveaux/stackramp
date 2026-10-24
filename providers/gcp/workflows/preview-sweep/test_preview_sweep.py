@@ -29,10 +29,18 @@ if name == "gcloud":
         if cfg.get("list_fails"):
             sys.exit(1)
         print(json.dumps(cfg["services"]))
+    elif args[:2] == ["storage", "cat"]:
+        if cfg.get("state_site"):
+            print(json.dumps({"outputs": {"site_id": {"value": cfg["state_site"]}}}))
+        else:
+            sys.exit(1)
     elif args[:2] == ["auth", "print-access-token"]:
         print("tok")
     elif args[:3] == ["run", "services", "describe"]:
-        sys.exit(1)  # gone
+        print(cfg.get("describe_err", "ERROR: Cannot find service [x]"), file=sys.stderr)
+        sys.exit(1)
+    elif args[:3] == ["run", "services", "delete"] and cfg.get("delete_fails"):
+        sys.exit(1)
     sys.exit(0)
 # curl
 url = [a for a in args if a.startswith("http")][0]
@@ -67,6 +75,8 @@ SERVICES = [
     svc("butlerjames-worker-pr-"),
     svc("qbot-pr-5", {"stackramp-app": "qbot", "stackramp-pr": "5"}),
     svc("butlerjames-odd", {"stackramp-app": "butlerjames", "stackramp-pr": "5"}),  # name mismatch
+    # app "butlerjames-worker"'s own preview: its label says so
+    svc("butlerjames-worker-pr-12", {"stackramp-app": "butlerjames-worker", "stackramp-pr": "12"}),
 ]
 BACKENDS = json.dumps([{"name": ""}, {"name": "worker"}, {"name": "browser"}])
 
@@ -143,6 +153,14 @@ class SweepTest(unittest.TestCase):
         self.assertEqual(deleted_services(calls), [])
         self.assertIn("state unknown", out.stdout)
 
+    def test_delete_of_gone_service_is_fine_other_errors_fail(self):
+        out, _ = run(SWEEP, env={"PR_NUM": "7"}, cfg={"delete_fails": True})
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertIn("already gone", out.stdout)
+        out, _ = run(SWEEP, env={"PR_NUM": "7"},
+                     cfg={"delete_fails": True, "describe_err": "ERROR: PERMISSION_DENIED"})
+        self.assertNotEqual(out.returncode, 0)
+
     def test_list_failure_fails(self):
         out, calls = run(SWEEP, cfg={"list_fails": True})
         self.assertNotEqual(out.returncode, 0)
@@ -154,7 +172,16 @@ class SweepTest(unittest.TestCase):
                          cfg={"services": [svc("qbot-ai-pr-5"), svc("qbot-pr-5"), svc("qbot-fe-pr-5")],
                               "sites": [], "channels": []})
         self.assertEqual(out.returncode, 0, out.stderr)
-        self.assertEqual(deleted_services(calls), ["qbot-fe-pr-5", "qbot-pr-5"])
+        self.assertEqual(deleted_services(calls), ["qbot-pr-5"])
+
+    def test_site_from_terraform_state(self):
+        # state names the site: a look-alike listing doesn't matter
+        out, calls = run(SWEEP, cfg={"state_site": "butlerjames-st8te-dev",
+                                     "sites": ["butlerjames-aaaaa-dev", "butlerjames-bbbbb-dev"]})
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("butlerjames-st8te-dev", out.stdout)
+        self.assertEqual(deleted_channels(calls), ["pr-12", "pr-5"])
+        self.assertFalse(any("/sites?" in a for c in calls for a in c))
 
     def test_no_single_dev_site_skips_channels(self):
         out, calls = run(SWEEP, cfg={"sites": ["butlerjames-aaaaa-dev", "butlerjames-bbbbb-dev"]})
@@ -181,6 +208,13 @@ class PrClosedTest(unittest.TestCase):
 
     def test_fails_open(self):
         self.assertEqual(self.outputs("pr-5", {})[0]["closed"], "false")
+
+    def test_strict_fails_closed(self):
+        out, _ = run(PR_CLOSED, args=("pr-5", "o/r"), env={"FAIL_OPEN": "false"}, cfg={"prs": {}})
+        self.assertNotEqual(out.returncode, 0)
+        out, _ = run(PR_CLOSED, args=("pr-5", "o/r"), env={"FAIL_OPEN": "false"}, cfg={"prs": {"5": "open"}})
+        self.assertEqual(out.returncode, 0)
+        self.assertIn("closed=false", out.stdout)
 
 
 if __name__ == "__main__":

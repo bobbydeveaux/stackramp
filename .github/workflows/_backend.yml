@@ -356,21 +356,26 @@ jobs:
       # run, so delete what this job just created.
       - name: Check the PR is still open (after deploy)
         id: pr_after
-        if: startsWith(inputs.environment, 'pr-') && steps.pr_before.outputs.closed != 'true'
+        # Also after a failed step: gcloud may have created the service.
+        if: "!cancelled() && startsWith(inputs.environment, 'pr-') && steps.pr_before.outputs.closed != 'true'"
         uses: bobbydeveaux/stackramp/platform-action/pr-closed@main
         with:
           environment: ${{ inputs.environment }}
+          # Can't tell: fail, so the job is rerun, rather than keep a preview
+          # the close cleanup may already have missed.
+          fail_open: "false"
 
       - name: Delete the preview (PR closed during deploy)
-        if: steps.pr_after.outputs.closed == 'true'
+        if: "!cancelled() && steps.pr_after.outputs.closed == 'true'"
         run: |
           SERVICE_NAME="${{ inputs.app_name }}-${{ inputs.environment }}"
           echo "::notice::PR #${{ steps.pr_after.outputs.pr }} closed during the deploy; deleting ${SERVICE_NAME}"
           if ! gcloud run services delete "$SERVICE_NAME" \
               --region="${{ inputs.region }}" --project="${{ inputs.platform_project }}" --quiet; then
-            # Fine when the PR-close cleanup got there first.
-            if gcloud run services describe "$SERVICE_NAME" \
-                --region="${{ inputs.region }}" --project="${{ inputs.platform_project }}" >/dev/null 2>&1; then
+            # Fine only when it's gone (the PR-close cleanup got there first).
+            if ERR=$(gcloud run services describe "$SERVICE_NAME" \
+                --region="${{ inputs.region }}" --project="${{ inputs.platform_project }}" 2>&1 >/dev/null) \
+                || ! grep -qiE "cannot find|not found" <<<"$ERR"; then
               echo "::error::Could not delete ${SERVICE_NAME}"; exit 1
             fi
           fi

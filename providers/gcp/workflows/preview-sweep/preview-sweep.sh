@@ -4,14 +4,16 @@
 # What counts as this app's preview (nothing else is ever touched):
 #   Cloud Run services named exactly
 #     {app}-pr-N         primary backend
-#     {app}-fe-pr-N      SSO frontend
 #     {app}-{name}-pr-N  each named entry of the parsed `backends` output
 #                        (the mcp block and every backends[] entry)
-#   or labelled stackramp-app={app} and stackramp-pr=N with a name ending
-#   -pr-N (preview deploys add these labels, so a backend since removed from
-#   stackramp.yaml is still found). N is digits only. Prefix matching is
-#   exact, so app "qbot" never matches "qbot-ai-pr-5" of app "qbot-ai".
-#   Firebase Hosting channels pr-N on the app's dev site.
+#   unless labelled stackramp-app=<another app>; or labelled
+#   stackramp-app={app} and stackramp-pr=N with a name ending -pr-N (preview
+#   deploys add these labels, so a backend since removed from stackramp.yaml
+#   is still found). N is digits only. Prefix matching is exact, so app
+#   "qbot" never matches "qbot-ai-pr-5" of app "qbot-ai". (The SSO frontend
+#   is never deployed for PRs, so there is no {app}-fe-pr-N.)
+#   Firebase Hosting channels pr-N on the app's dev site: site_id_dev from
+#   the app's Terraform state, else a unique {app}-dev / {app}-xxxxx-dev.
 #
 # Env:
 #   APP_NAME   stackramp.yaml `name`
@@ -29,7 +31,8 @@
 #
 # Lists everything first, then deletes. A PR whose state can't be read is
 # kept (warning). Exits non-zero when Cloud Run can't be listed or a delete
-# failed; Firebase problems are warnings only (as before).
+# failed (a service already gone is fine); Firebase listing problems are
+# warnings only (as before), a failed channel delete is an error.
 set -euo pipefail
 
 : "${APP_NAME:?}" "${PROJECT:?}" "${REGION:?}"
@@ -47,7 +50,7 @@ fi
 
 # ── 1. Cloud Run: candidate preview services, "N<TAB>service" ─────────────────
 PREFIXES=$(jq -c --arg app "$APP_NAME" \
-  '[$app, "\($app)-fe"] + [.[]? | select((.name // "") != "") | "\($app)-\(.name)"] | unique' \
+  '[$app] + [.[]? | select((.name // "") != "") | "\($app)-\(.name)"] | unique' \
   <<<"$BACKENDS")
 
 # One list call; fails the script on auth/permission errors.
@@ -60,7 +63,7 @@ SVC_LINES=$(jq -r --argjson p "$PREFIXES" --arg app "$APP_NAME" '
       | if ($r | test("^[0-9]+$")) then $r else empty end
     else empty end;
   .[] | .metadata.name as $n | (.metadata.labels // {}) as $l
-  | ( [ $p[] as $x | prnum($n; $x) ]
+  | ( (if ($l["stackramp-app"] // $app) == $app then [ $p[] as $x | prnum($n; $x) ] else [] end)
       + ( ($l["stackramp-pr"] // "") as $pr
           | if ($l["stackramp-app"] // "") == $app and ($pr | test("^[0-9]+$"))
                and ($n | endswith("-pr-" + $pr))
@@ -71,14 +74,16 @@ SVC_LINES=$(jq -r --argjson p "$PREFIXES" --arg app "$APP_NAME" '
 # Dev sites are "{app}-{5 char suffix}-dev" (platform/main.tf), or "{app}-dev"
 # for sites created before the suffix existed. The firebase CLI needs a
 # firebase.json, so use the Hosting REST API directly.
-SITE_ID=""
+SITE_ID=$(gcloud storage cat "gs://${PROJECT}-tf-state/${APP_NAME}-dev/default.tfstate" 2>/dev/null \
+  | jq -r '.outputs.site_id.value // ""' 2>/dev/null || true)
 CHANNEL_PRS=""
 FB_TOKEN=$(gcloud auth print-access-token 2>/dev/null || true)
 FB_H=(-H "Authorization: Bearer $FB_TOKEN")
 [ -z "${QUOTA_PROJECT:-}" ] || FB_H+=(-H "x-goog-user-project: ${QUOTA_PROJECT}")
 if [ -z "$FB_TOKEN" ]; then
   echo "::warning::No access token for Firebase; skipping preview channels"
-else
+  SITE_ID=""
+elif [ -z "$SITE_ID" ]; then
   if SITES=$(curl -sf "${FB_H[@]}" \
       "${API_FB}/projects/${PROJECT}/sites?pageSize=200" \
       | jq -r '.sites[]?.name | split("/") | last'); then
@@ -105,9 +110,13 @@ if [ -n "$SITE_ID" ]; then
       echo "::warning::Could not list Firebase channels on ${SITE_ID}; skipping them"
       CHANNEL_PRS=""; break
     fi
-    CHANNEL_PRS+=$(jq -r '.channels[]?.name | split("/") | last
-      | select(test("^pr-[0-9]+$")) | ltrimstr("pr-")' <<<"$RESP")$'\n'
-    PAGE=$(jq -r '.nextPageToken // ""' <<<"$RESP")
+    if ! PAGE_PRS=$(jq -r '.channels[]?.name | split("/") | last
+        | select(test("^pr-[0-9]+$")) | ltrimstr("pr-")' <<<"$RESP"); then
+      echo "::warning::Unreadable Firebase channel list on ${SITE_ID}; skipping channels"
+      CHANNEL_PRS=""; break
+    fi
+    CHANNEL_PRS+="${PAGE_PRS}"$'\n'
+    PAGE=$(jq -r '.nextPageToken // ""' <<<"$RESP" 2>/dev/null || true)
     [ -n "$PAGE" ] || break
   done
   CHANNEL_PRS=$(grep -E '^[0-9]+$' <<<"$CHANNEL_PRS" | sort -un || true)
@@ -178,10 +187,11 @@ for SVC in $(grep . <<<"$DELETE_SVCS" | sort -u || true); do
   echo "Deleting Cloud Run service ${SVC}"
   if gcloud run services delete "$SVC" --region="$REGION" --project="$PROJECT" --quiet; then
     DELETED=$((DELETED + 1))
-  elif gcloud run services describe "$SVC" --region="$REGION" --project="$PROJECT" >/dev/null 2>&1; then
-    echo "::error::Could not delete ${SVC}"; FAILED=1
-  else
+  elif ! ERR=$(gcloud run services describe "$SVC" --region="$REGION" --project="$PROJECT" 2>&1 >/dev/null) \
+      && grep -qiE "cannot find|not found" <<<"$ERR"; then
     echo "${SVC} is already gone"
+  else
+    echo "::error::Could not delete ${SVC}"; FAILED=1
   fi
 done
 
@@ -193,7 +203,7 @@ if [ -n "$SITE_ID" ]; then
     case "$CODE" in
       200) echo "Deleted Firebase preview channel pr-${N} on ${SITE_ID}" ;;
       404) echo "No Firebase preview channel pr-${N} on ${SITE_ID}" ;;
-      *)   echo "::warning::Deleting Firebase channel pr-${N} on ${SITE_ID} returned HTTP ${CODE}" ;;
+      *)   echo "::error::Deleting Firebase channel pr-${N} on ${SITE_ID} returned HTTP ${CODE}"; FAILED=1 ;;
     esac
   done
 fi

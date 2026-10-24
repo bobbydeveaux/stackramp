@@ -5,13 +5,17 @@ description: >
   `gcloud run deploy` (skip when closed) and again after it (delete what they
   just created when the PR closed meanwhile), so a deploy that finishes after
   the PR-close cleanup can't leave a preview running. dev and prod: always
-  closed=false, no API call. Fails open (closed=false) when GitHub can't be
-  asked. Needs a token that can read pull requests (`pull-requests: read`).
+  closed=false, no API call. When GitHub can't be asked: closed=false
+  (fail_open, the default, before a deploy) or a failed step (after one). Needs a token that can read pull requests (`pull-requests: read`).
 
 inputs:
   environment:
     description: "Deploy environment: dev, prod or pr-<n>"
     required: true
+  fail_open:
+    description: "true (before a deploy): when GitHub can't be asked, closed=false and a warning. false (after a deploy): fail the step instead."
+    required: false
+    default: "true"
   github_token:
     description: "Token that can read the repo's pull requests"
     required: false
@@ -35,5 +39,6 @@ runs:
         ENVIRONMENT: ${{ inputs.environment }}
         GH_TOKEN: ${{ inputs.github_token }}
         REPO: ${{ github.repository }}
+        FAIL_OPEN: ${{ inputs.fail_open }}
         ACTION_PATH: ${{ github.action_path }}
       run: bash "${ACTION_PATH}/pr-closed.sh" "$ENVIRONMENT" "$REPO" >> "$GITHUB_OUTPUT"

@@ -511,13 +511,16 @@ and don't outlive their PR:
   This covers a PR marked ready and merged seconds later, where the close
   cleanup finished before the ready run's deploy. The workflow token needs
   `pull-requests: read` (the documented `pull-requests: write` covers it).
-  If GitHub can't be asked, the deploy goes ahead and the sweep catches it.
+  If GitHub can't be asked before the deploy, the deploy goes ahead and the
+  sweep catches it; if it can't be asked after, the job fails (rerun it).
 - **Sweep.** After each PR's cleanup, and on every scheduled run, StackRamp
   also deletes every preview of the app whose PR is closed. It only touches
-  this app's preview services: named exactly `<app>-pr-<n>`, `<app>-fe-pr-<n>`
-  or `<app>-<backend>-pr-<n>` for a backend in `stackramp.yaml`, or carrying
-  both labels above; never `dev`/`prod` services or other apps' (app `qbot`
-  never matches `qbot-ai-pr-5`). It lists before deleting and keeps a preview
+  this app's preview services: named exactly `<app>-pr-<n>` or
+  `<app>-<backend>-pr-<n>` for a backend in `stackramp.yaml` (and not
+  labelled for another app), or carrying both labels above with
+  `stackramp-app=<app>`; never `dev`/`prod` services (app `qbot` never
+  matches `qbot-ai-pr-5`). Channels are swept on the dev site named in the
+  app's Terraform state. It lists before deleting and keeps a preview
   whose PR state it can't read. The run summary shows a table of what it
   found and did.
 
