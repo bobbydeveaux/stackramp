@@ -221,6 +221,14 @@ CPU allocation for the backend service. Examples: `1`, `2`, `4`.
 
 The most Cloud Run instances the backend scales to. Lower it when every instance holds database connections, so instances × pool size stays within the database's connection limit (for example 3 instances × 5 connections = 15 on a small shared instance). Entries in `backends:` take the same field.
 
+> **PR previews always scale to zero.** `min_instances` and `always_on` (on
+> `backend:`, `backends:` entries and `mcp:`) apply to `dev` and `prod` only.
+> A PR preview (`pr-<number>`) is always deployed with `--min-instances=0`
+> and CPU throttled (CPU only during requests), so an instance kept warm for
+> prod latency doesn't run 24/7 for every open PR. Background work outside a
+> request, or long-lived connections, won't run between requests on a
+> preview; try those on `dev`. See [PR previews](#pr-previews).
+
 ---
 
 ### `database`
@@ -481,6 +489,76 @@ gcloud secrets list --project=<platform project> --format="value(name.basename()
 > `DATABASE_URL` is deployed with `--clear-secrets`, so scoped-away secrets
 > come off it too. In a project with no `platform-inject=true` secrets at all
 > no secret flag is passed, as before.
+
+---
+
+## PR previews
+
+Each pull request gets its own services, `<app>-pr-<n>` (backend),
+`<app>-<name>-pr-<n>` (each `backends:` entry and `mcp:`), and a Firebase
+preview channel `pr-<n>` on the dev site. Previews cost as little as possible
+and don't outlive their PR:
+
+- **Scale to zero, CPU throttled**, whatever `min_instances` / `always_on`
+  say (those are for `dev` and `prod`). Preview services carry the labels
+  `stackramp-app=<app>` and `stackramp-pr=<n>`.
+- **Deleted when the PR closes.** The caller's workflow must list `closed` in
+  `pull_request: types` (see the recommended setup above).
+- **No preview after close.** Each preview deploy asks GitHub whether the PR
+  is still open right before `gcloud run deploy` (and before the Firebase
+  channel deploy and migrations) and skips when it's closed; after deploying
+  it asks again and deletes what it just created if the PR closed meanwhile.
+  This covers a PR marked ready and merged seconds later, where the close
+  cleanup finished before the ready run's deploy. The workflow token needs
+  `pull-requests: read` (the documented `pull-requests: write` covers it).
+  If GitHub can't be asked before the deploy, the deploy goes ahead and the
+  sweep catches it; if it can't be asked after, the job fails (rerun it).
+- **Sweep.** After each PR's cleanup, and on every scheduled run, StackRamp
+  also deletes every preview of the app whose PR is closed. It only touches
+  this app's preview services: named exactly `<app>-pr-<n>` or
+  `<app>-<backend>-pr-<n>` for a backend in `stackramp.yaml` (and not
+  labelled for another app), or carrying both labels above with
+  `stackramp-app=<app>`; never `dev`/`prod` services (app `qbot` never
+  matches `qbot-ai-pr-5`). Channels are swept on the dev site named in the
+  app's Terraform state. It lists before deleting and keeps a preview
+  whose PR state it can't read. The run summary shows a table of what it
+  found and did.
+
+For a daily sweep without a daily full deploy, add a second workflow that
+calls `_sweep-previews.yml` (it does nothing else):
+
+```yaml
+name: Preview sweep
+on:
+  schedule:
+    - cron: "0 4 * * *"          # daily 04:00 UTC
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "List what would be deleted; delete nothing"
+        type: boolean
+        default: true
+jobs:
+  sweep:
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: read
+    uses: bobbydeveaux/stackramp/.github/workflows/_sweep-previews.yml@main
+    with:
+      dry_run: ${{ inputs.dry_run == true }}
+    secrets: inherit
+```
+
+Run it by hand with `dry_run` to see what it would delete. To try the
+listing locally (read-only):
+
+```bash
+DRY_RUN=true APP_NAME=myapp BACKENDS='[{"name":"worker"}]' \
+  PROJECT=my-platform-project REGION=europe-west1 QUOTA_PROJECT=my-platform-project \
+  REPO=me/myapp GH_TOKEN=$(gh auth token) \
+  bash providers/gcp/workflows/preview-sweep/preview-sweep.sh
+```
 
 ---
 

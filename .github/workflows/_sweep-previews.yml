@@ -1,0 +1,73 @@
+name: "Sweep PR Previews"
+
+# Reusable workflow — deletes every PR preview of the app (Cloud Run services
+# and Firebase preview channels) whose pull request is closed. platform.yml
+# runs it on scheduled runs, _cleanup-preview.yml after each PR's own cleanup.
+# Call it from a daily schedule to catch stragglers sooner:
+#
+#   name: Preview sweep
+#   on:
+#     schedule:
+#       - cron: "0 4 * * *"
+#     workflow_dispatch:
+#       inputs:
+#         dry_run:
+#           type: boolean
+#           default: true
+#   jobs:
+#     sweep:
+#       permissions:
+#         id-token: write
+#         contents: read
+#         pull-requests: read
+#       uses: bobbydeveaux/stackramp/.github/workflows/_sweep-previews.yml@main
+#       with:
+#         dry_run: ${{ inputs.dry_run == true }}
+#       secrets: inherit
+
+on:
+  workflow_call:
+    inputs:
+      config_path:
+        description: "Path to stackramp.yaml"
+        type: string
+        required: false
+        default: "stackramp.yaml"
+      dry_run:
+        description: "List what would be deleted; delete nothing"
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: read
+
+jobs:
+  sweep:
+    name: Sweep closed PR previews
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse config
+        id: config
+        uses: bobbydeveaux/stackramp/platform-action@main
+        with:
+          config_path: ${{ inputs.config_path }}
+
+      - name: Authenticate to Google Cloud
+        uses: bobbydeveaux/stackramp/providers/gcp/workflows/auth@main
+        with:
+          wif_provider: ${{ vars.STACKRAMP_WIF_PROVIDER }}
+          service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
+
+      - name: Sweep
+        uses: bobbydeveaux/stackramp/providers/gcp/workflows/preview-sweep@main
+        with:
+          app_name: ${{ steps.config.outputs.app_name }}
+          backends: ${{ steps.config.outputs.backends }}
+          project: ${{ vars.STACKRAMP_PROJECT }}
+          region: ${{ vars.STACKRAMP_REGION || 'europe-west1' }}
+          dry_run: ${{ inputs.dry_run }}

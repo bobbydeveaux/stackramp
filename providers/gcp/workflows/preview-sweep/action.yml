@@ -1,0 +1,56 @@
+name: "PR preview sweep (GCP)"
+description: >
+  Delete one app's PR preview Cloud Run services and Firebase preview
+  channels whose pull request is closed. With `pr`, only that PR, treated as
+  closed (the cleanup when a PR closes); without it, every preview of the app
+  found, each PR's state asked from GitHub (the sweep, which catches previews
+  a deploy created after its PR's cleanup had run). Only this app's preview
+  services are touched: names {app}-pr-N, {app}-fe-pr-N, {app}-{backend}-pr-N
+  for the backends in stackramp.yaml, or the stackramp-app / stackramp-pr
+  labels preview deploys add. Lists before it deletes; `dry_run` deletes
+  nothing. Logic and tests: preview-sweep.sh, test_preview_sweep.py. Expects
+  the caller to have authenticated to Google Cloud already.
+
+inputs:
+  app_name:
+    description: "App name (stackramp.yaml `name`)"
+    required: true
+  backends:
+    description: "The `backends` output of platform-action (JSON)"
+    required: false
+    default: "[]"
+  project:
+    description: "GCP platform project"
+    required: true
+  region:
+    description: "Cloud Run region"
+    required: true
+  pr:
+    description: "Only this PR, treated as closed (no GitHub lookup). Empty: sweep every preview."
+    required: false
+    default: ""
+  dry_run:
+    description: "true: list what would be deleted, delete nothing"
+    required: false
+    default: "false"
+  github_token:
+    description: "Token that can read the repo's pull requests (sweep mode)"
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Sweep PR previews
+      shell: bash
+      env:
+        APP_NAME: ${{ inputs.app_name }}
+        BACKENDS: ${{ inputs.backends }}
+        PROJECT: ${{ inputs.project }}
+        REGION: ${{ inputs.region }}
+        PR_NUM: ${{ inputs.pr }}
+        DRY_RUN: ${{ inputs.dry_run }}
+        GH_TOKEN: ${{ inputs.github_token }}
+        REPO: ${{ github.repository }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: bash "${ACTION_PATH}/preview-sweep.sh"
