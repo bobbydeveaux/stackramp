@@ -359,6 +359,11 @@ the `deploy_all: true` workflow input, a branch's first push, when the change
 list can't be computed, and when `stackramp.yaml`, the calling workflow file or
 a `full_deploy_paths` glob changed.
 
+**Release tags.** An app that releases on a cadence instead of on every push
+can call platform.yml with `release_tags: true` and trigger its deploy workflow
+on `push: tags: ['release-*']`. A pushed `release-*` tag then deploys every
+service from that tag, to dev and then prod, like a push to main.
+
 ```yaml
 deploy:
   ignore_paths: ["api/testdata/**", "**/*.test.ts"]  # added to the built-in list

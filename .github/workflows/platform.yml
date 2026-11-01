@@ -34,6 +34,11 @@ on:
         type: boolean
         required: false
         default: false
+      release_tags:
+        description: "Also deploy to prod on a pushed tag release-* (every service, from that tag), for apps that release on a cadence instead of on every push to main"
+        type: boolean
+        required: false
+        default: false
       dry_run:
         description: "Only report the plan: what would deploy and whether Terraform would apply. Builds, scans, applies and deploys nothing."
         type: boolean
@@ -145,6 +150,7 @@ jobs:
             ${{ github.event_name == 'workflow_dispatch' && 'manual run (workflow_dispatch)' ||
                 github.event_name == 'schedule' && 'scheduled run' ||
                 inputs.deploy_all && 'deploy_all input' ||
+                startsWith(github.ref, 'refs/tags/') && 'release tag' ||
                 (github.event_name == 'push' && github.event.before == '0000000000000000000000000000000000000000') && 'first push of this branch' ||
                 '' }}
           app_name: ${{ steps.config.outputs.app_name }}
@@ -314,8 +320,8 @@ jobs:
       PROJECT: ${{ vars.STACKRAMP_PROJECT }}
       STATE_BUCKET: ${{ vars.STACKRAMP_PROJECT }}-tf-state
       TF_DIR: .stackramp/providers/gcp/terraform/platform
-      # prod infra follows main only (push, manual run, schedule)
-      WITH_PROD: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') }}
+      # prod infra follows main (push, manual run, schedule), and release-* tags when release_tags is on
+      WITH_PROD: ${{ (github.ref == 'refs/heads/main' || (inputs.release_tags && startsWith(github.ref, 'refs/tags/release-'))) && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') }}
     steps:
       - name: Checkout StackRamp platform
         uses: actions/checkout@v4
@@ -698,7 +704,7 @@ jobs:
       gateway_namespace: ${{ vars.STACKRAMP_GKE_GATEWAY_NAMESPACE }}
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # 4. Deploy to PROD (main branch only, after that service's dev deploy
+  # 4. Deploy to PROD (main branch, or a release-* tag with release_tags on; after that service's dev deploy
   # succeeded). Reuses the image dev pushed for this commit (no rebuild).
   # ─────────────────────────────────────────────────────────────────────────────
   deploy-frontend-prod:
@@ -706,7 +712,7 @@ jobs:
     needs: [parse-config, provision, deploy-frontend]
     if: |
       !cancelled() &&
-      github.ref == 'refs/heads/main' &&
+      (github.ref == 'refs/heads/main' || (inputs.release_tags && startsWith(github.ref, 'refs/tags/release-'))) &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') &&
       needs.provision.result == 'success' &&
       needs.parse-config.outputs.has_frontend == 'true' &&
@@ -738,7 +744,7 @@ jobs:
     needs: [parse-config, provision, deploy-backend]
     if: |
       !cancelled() &&
-      github.ref == 'refs/heads/main' &&
+      (github.ref == 'refs/heads/main' || (inputs.release_tags && startsWith(github.ref, 'refs/tags/release-'))) &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') &&
       needs.provision.result == 'success' &&
       needs.parse-config.outputs.has_backend == 'true' &&
@@ -774,7 +780,7 @@ jobs:
     needs: [parse-config, provision, deploy-mcp]
     if: |
       !cancelled() &&
-      github.ref == 'refs/heads/main' &&
+      (github.ref == 'refs/heads/main' || (inputs.release_tags && startsWith(github.ref, 'refs/tags/release-'))) &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') &&
       needs.provision.result == 'success' &&
       needs.parse-config.outputs.has_mcp == 'true' &&
@@ -806,7 +812,7 @@ jobs:
     needs: [parse-config, provision, deploy-machine]
     if: |
       !cancelled() &&
-      github.ref == 'refs/heads/main' &&
+      (github.ref == 'refs/heads/main' || (inputs.release_tags && startsWith(github.ref, 'refs/tags/release-'))) &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') &&
       needs.provision.result == 'success' &&
       needs.parse-config.outputs.machine_deploy != '[]' &&
@@ -847,7 +853,7 @@ jobs:
     needs: [parse-config, provision, deploy-kubernetes]
     if: |
       !cancelled() &&
-      github.ref == 'refs/heads/main' &&
+      (github.ref == 'refs/heads/main' || (inputs.release_tags && startsWith(github.ref, 'refs/tags/release-'))) &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') &&
       needs.provision.result == 'success' &&
       needs.parse-config.outputs.has_kubernetes == 'true' &&
