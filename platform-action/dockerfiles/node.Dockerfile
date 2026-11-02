@@ -2,13 +2,14 @@
 # Multi-stage build for production-ready Node apps.
 # Detects package manager from lockfile (pnpm, yarn, or npm).
 
-# Node 24 LTS: Node 20 is end-of-life and its bundled Brotli decoder is
-# vulnerable to CVE-2026-111497 with no fix (patched in 22.23.4 / 24.22.1).
-FROM node:24-alpine AS builder
+# Node 26 is the current LTS ("Lithium"). Stay on the newest LTS: older lines
+# miss fixes such as CVE-2026-111497 (Brotli), which Node 20 never got.
+FROM node:26-alpine AS builder
 
 WORKDIR /app
 
-RUN corepack enable
+# Node 25+ no longer ships corepack, so install it from npm first.
+RUN npm install -g corepack && corepack enable
 
 COPY package.json ./
 COPY package-lock.json* pnpm-lock.yaml* yarn.lock* ./
@@ -23,11 +24,12 @@ RUN if [ -f pnpm-lock.yaml ]; then \
 
 COPY . .
 
-FROM node:24-alpine
+FROM node:26-alpine
 
 WORKDIR /app
 
-RUN corepack enable
+# Node 25+ no longer ships corepack, so install it from npm first.
+RUN npm install -g corepack && corepack enable
 
 COPY package.json ./
 COPY package-lock.json* pnpm-lock.yaml* yarn.lock* ./

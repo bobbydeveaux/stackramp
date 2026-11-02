@@ -14,7 +14,7 @@ domain_txt:         # optional — extra TXT values at the apex (SPF, site verif
 frontend:
   framework: react
   dir: frontend
-  node_version: "20"
+  node_version: "26"
   sso: true          # optional — serve via Cloud Run + IAP (see SSO section)
   proxy_paths:       # optional — extra site paths rewritten to the backend
     - "/.well-known/**"   #   besides /api/** (Firebase globs; needs a backend)
@@ -129,9 +129,11 @@ Directory containing your frontend source code, relative to repo root.
 | | |
 |---|---|
 | Type | `string` |
-| Default | `20` |
+| Default | `26` |
 
-Node.js version for building the frontend. Can also be set via `.nvmrc` in the frontend directory.
+Node.js version for building the frontend. Defaults to the newest Node LTS.
+
+> **Note:** the build currently reads only `.nvmrc` in the frontend directory; this field is accepted but not yet wired through to the build. Use `.nvmrc` to pin a different version. Runtime images for `next` frontends and `node` backends use `node:26-alpine` regardless.
 
 #### `frontend.sso`
 
