@@ -2,7 +2,9 @@
 # Multi-stage build for production-ready Node apps.
 # Detects package manager from lockfile (pnpm, yarn, or npm).
 
-FROM node:20-alpine AS builder
+# Node 24 LTS: Node 20 is end-of-life and its bundled Brotli decoder is
+# vulnerable to CVE-2026-111497 with no fix (patched in 22.23.4 / 24.22.1).
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
@@ -21,7 +23,7 @@ RUN if [ -f pnpm-lock.yaml ]; then \
 
 COPY . .
 
-FROM node:20-alpine
+FROM node:24-alpine
 
 WORKDIR /app
 
