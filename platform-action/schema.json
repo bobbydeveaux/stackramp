@@ -32,7 +32,7 @@
         },
         "node_version": {
           "type": "string",
-          "default": "20"
+          "default": "26"
         },
         "proxy_paths": {
           "type": "array",
