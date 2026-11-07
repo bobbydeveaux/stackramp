@@ -53,6 +53,7 @@ on:
         required: false
         default: "1"
       min_instances:
+        description: "Minimum instances kept warm. Ignored for PR previews (pr-<n>), which always scale to zero."
         type: number
         required: false
         default: 0
@@ -61,7 +62,7 @@ on:
         required: false
         default: 10
       always_on:
-        description: "CPU always allocated; at least one instance kept up. For long-lived connections."
+        description: "CPU always allocated; at least one instance kept up. For long-lived connections. Ignored for PR previews (pr-<n>): CPU throttled, scale to zero."
         type: boolean
         required: false
         default: false
@@ -116,6 +117,7 @@ on:
 permissions:
   id-token: write
   contents: read
+  pull-requests: read   # PR previews: is the PR still open?
 
 jobs:
   deploy:
@@ -170,7 +172,22 @@ jobs:
           app_name: ${{ inputs.app_name }}
           environment: ${{ inputs.environment }}
 
+      # PR previews: a deploy that starts after its PR closed (marked ready
+      # and merged seconds later) would recreate services the PR-close
+      # cleanup has already deleted. Skip the deploy then. dev/prod: always
+      # closed=false, no API call.
+      - name: Check the PR is still open
+        id: pr_before
+        uses: bobbydeveaux/stackramp/platform-action/pr-closed@main
+        with:
+          environment: ${{ inputs.environment }}
+
+      - name: Skip (PR already closed)
+        if: steps.pr_before.outputs.closed == 'true'
+        run: echo "::notice::PR #${{ steps.pr_before.outputs.pr }} is closed; not deploying its preview"
+
       - name: Deploy to Cloud Run
+        if: steps.pr_before.outputs.closed != 'true'
         env:
           PLATFORM_SECRET_REFS: ${{ steps.platform_secrets.outputs.secret_refs }}
           PLATFORM_CLEAR_SECRETS: ${{ steps.platform_secrets.outputs.clear_secrets }}
@@ -202,6 +219,16 @@ jobs:
             CPU_FLAG="--no-cpu-throttling"
             [ "$MIN_INSTANCES" -lt 1 ] && MIN_INSTANCES=1
           fi
+          # PR previews always scale to zero with CPU throttled, whatever
+          # min_instances / always_on say: those are for dev and prod, and on
+          # a preview they kept one instance per open PR running 24/7.
+          PREVIEW_LABELS=()
+          if [[ "${{ inputs.environment }}" =~ ^pr-([0-9]+)$ ]]; then
+            MIN_INSTANCES=0
+            CPU_FLAG="--cpu-throttling"
+            # Lets the preview sweep find this service by app and PR.
+            PREVIEW_LABELS=(--update-labels="stackramp-app=${{ inputs.app_name }},stackramp-pr=${BASH_REMATCH[1]}")
+          fi
 
           DEPLOY_FLAGS=(
             --image="$IMAGE"
@@ -217,6 +244,7 @@ jobs:
             "$CPU_FLAG"
             --project="${{ inputs.platform_project }}"
             --ingress=all
+            "${PREVIEW_LABELS[@]}"
           )
           if [ "${{ inputs.public }}" = "true" ]; then
             # Public MCP: reachable client->server by external OAuth clients
@@ -243,7 +271,7 @@ jobs:
           gcloud run deploy "$SERVICE_NAME" "${DEPLOY_FLAGS[@]}"
 
       - name: Grant domain invoker on MCP service
-        if: inputs.iap_allowed_domain != '' && inputs.public != 'true'
+        if: inputs.iap_allowed_domain != '' && inputs.public != 'true' && steps.pr_before.outputs.closed != 'true'
         run: |
           SERVICE_NAME="${{ inputs.app_name }}-${{ inputs.name }}-${{ inputs.environment }}"
           IFS=',' read -ra DOMAINS <<< "${{ inputs.iap_allowed_domain }}"
@@ -260,6 +288,7 @@ jobs:
 
       - name: Get deployed URL
         id: url
+        if: steps.pr_before.outputs.closed != 'true'
         run: |
           SERVICE_NAME="${{ inputs.app_name }}-${{ inputs.name }}-${{ inputs.environment }}"
           URL=$(gcloud run services describe "$SERVICE_NAME" \
@@ -284,4 +313,32 @@ jobs:
             gcloud run services update "$SERVICE_NAME" \
               --region=${{ inputs.region }} --project=${{ inputs.platform_project }} \
               --update-env-vars="SERVICE_URL=$URL" --quiet
+          fi
+
+      # The PR closed while this deploy ran: its cleanup may already have
+      # run, so delete what this job just created.
+      - name: Check the PR is still open (after deploy)
+        id: pr_after
+        # Also after a failed step: gcloud may have created the service.
+        if: "!cancelled() && startsWith(inputs.environment, 'pr-') && steps.pr_before.outputs.closed != 'true'"
+        uses: bobbydeveaux/stackramp/platform-action/pr-closed@main
+        with:
+          environment: ${{ inputs.environment }}
+          # Can't tell: fail, so the job is rerun, rather than keep a preview
+          # the close cleanup may already have missed.
+          fail_open: "false"
+
+      - name: Delete the preview (PR closed during deploy)
+        if: "!cancelled() && steps.pr_after.outputs.closed == 'true'"
+        run: |
+          SERVICE_NAME="${{ inputs.app_name }}-${{ inputs.name }}-${{ inputs.environment }}"
+          echo "::notice::PR #${{ steps.pr_after.outputs.pr }} closed during the deploy; deleting ${SERVICE_NAME}"
+          if ! gcloud run services delete "$SERVICE_NAME" \
+              --region="${{ inputs.region }}" --project="${{ inputs.platform_project }}" --quiet; then
+            # Fine only when it's gone (the PR-close cleanup got there first).
+            if ERR=$(gcloud run services describe "$SERVICE_NAME" \
+                --region="${{ inputs.region }}" --project="${{ inputs.platform_project }}" 2>&1 >/dev/null) \
+                || ! grep -qiE "cannot find|not found" <<<"$ERR"; then
+              echo "::error::Could not delete ${SERVICE_NAME}"; exit 1
+            fi
           fi

@@ -2,7 +2,8 @@ name: "Cleanup Preview Environment"
 
 # Reusable workflow — called by consuming repos on PR close.
 # Deletes every Cloud Run preview service created for the PR and its Firebase
-# preview channel.
+# preview channel, then sweeps the app's other closed PRs (previews a deploy
+# created after their own cleanup had already run).
 #
 # Preview service names (see platform.yml / _mcp.yml):
 #   {app}-pr-N         primary backend
@@ -10,6 +11,8 @@ name: "Cleanup Preview Environment"
 #   {app}-{name}-pr-N  every named entry in the `backends` output: the mcp
 #                      block ("mcp") and each backends[] entry (e.g. ingest,
 #                      worker, browser)
+# plus any service labelled stackramp-app={app}, stackramp-pr=N (preview
+# deploys add these). The logic lives in providers/gcp/workflows/preview-sweep.
 #
 # The caller's workflow must listen for `pull_request: types: [..., closed]`;
 # the default pull_request types do not include `closed`, so without it this
@@ -27,6 +30,7 @@ on:
 permissions:
   id-token: write
   contents: read
+  pull-requests: read   # the sweep reads other PRs' state
 
 jobs:
   cleanup:
@@ -47,72 +51,22 @@ jobs:
           wif_provider: ${{ vars.STACKRAMP_WIF_PROVIDER }}
           service_account: ${{ vars.STACKRAMP_SA_EMAIL }}
 
-      - name: Delete preview Cloud Run services
-        env:
-          APP_NAME: ${{ steps.config.outputs.app_name }}
-          BACKENDS: ${{ steps.config.outputs.backends }}
-          REGION: ${{ vars.STACKRAMP_REGION || 'europe-west1' }}
-          PROJECT: ${{ vars.STACKRAMP_PROJECT }}
-          PR_NUM: ${{ github.event.number }}
-        run: |
-          set -euo pipefail
-          ENV="pr-${PR_NUM}"
+      - name: Delete this PR's preview
+        uses: bobbydeveaux/stackramp/providers/gcp/workflows/preview-sweep@main
+        with:
+          app_name: ${{ steps.config.outputs.app_name }}
+          backends: ${{ steps.config.outputs.backends }}
+          project: ${{ vars.STACKRAMP_PROJECT }}
+          region: ${{ vars.STACKRAMP_REGION || 'europe-west1' }}
+          pr: ${{ github.event.number }}
 
-          # Every service name this app can have for the PR.
-          WANT=$( {
-            echo "${APP_NAME}-${ENV}"
-            echo "${APP_NAME}-fe-${ENV}"
-            jq -r --arg app "$APP_NAME" --arg env "$ENV" \
-              '.[] | select(.name != "") | "\($app)-\(.name)-\($env)"' <<<"${BACKENDS:-[]}"
-          } | sort -u)
-
-          # One list call (fails the step on auth/permission errors instead of
-          # silently skipping, which `describe 2>/dev/null` used to do).
-          HAVE=$(gcloud run services list --region="$REGION" --project="$PROJECT" \
-            --format='value(metadata.name)' | sort -u)
-
-          DELETED=0
-          for SVC in $(comm -12 <(echo "$WANT") <(echo "$HAVE")); do
-            echo "Deleting preview service: ${SVC}"
-            gcloud run services delete "$SVC" --region="$REGION" --project="$PROJECT" --quiet
-            DELETED=$((DELETED + 1))
-          done
-          echo "Deleted ${DELETED} preview service(s) for PR #${PR_NUM}"
-
-      - name: Delete Firebase preview channel
-        env:
-          APP_NAME: ${{ steps.config.outputs.app_name }}
-          PROJECT: ${{ vars.STACKRAMP_PROJECT }}
-          PR_NUM: ${{ github.event.number }}
-        run: |
-          set -uo pipefail
-          # Dev sites are "{app}-{5 char suffix}-dev" (platform/main.tf), or
-          # "{app}-dev" for sites created before the suffix existed. The
-          # firebase CLI needs a firebase.json to delete a channel, so use the
-          # Hosting REST API directly.
-          API="https://firebasehosting.googleapis.com/v1beta1"
-          TOKEN=$(gcloud auth print-access-token)
-          SITES=$(curl -sf -H "Authorization: Bearer $TOKEN" \
-            "${API}/projects/${PROJECT}/sites?pageSize=200" \
-            | jq -r '.sites[]?.name | split("/") | last') || {
-            echo "Warning: could not list Firebase sites"; exit 0; }
-
-          if grep -qx "${APP_NAME}-dev" <<<"$SITES"; then
-            SITE_ID="${APP_NAME}-dev"
-          else
-            MATCHES=$(grep -E "^${APP_NAME}-[a-z0-9]{5}-dev$" <<<"$SITES" || true)
-            if [ "$(grep -c . <<<"$MATCHES")" != "1" ]; then
-              echo "No single Firebase dev site for ${APP_NAME} (found: ${MATCHES:-none}); nothing to delete"
-              exit 0
-            fi
-            SITE_ID="$MATCHES"
-          fi
-
-          CODE=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE \
-            -H "Authorization: Bearer $TOKEN" \
-            "${API}/sites/${SITE_ID}/channels/pr-${PR_NUM}")
-          case "$CODE" in
-            200) echo "Deleted Firebase preview channel pr-${PR_NUM} on ${SITE_ID}" ;;
-            404) echo "No Firebase preview channel pr-${PR_NUM} on ${SITE_ID}" ;;
-            *)   echo "Warning: deleting Firebase channel pr-${PR_NUM} on ${SITE_ID} returned HTTP ${CODE}" ;;
-          esac
+      # Backstop for the deploy/cleanup race: any other closed PR's preview
+      # still around. Never fails the cleanup (the scheduled sweep retries).
+      - name: Sweep other closed PRs' previews
+        continue-on-error: true
+        uses: bobbydeveaux/stackramp/providers/gcp/workflows/preview-sweep@main
+        with:
+          app_name: ${{ steps.config.outputs.app_name }}
+          backends: ${{ steps.config.outputs.backends }}
+          project: ${{ vars.STACKRAMP_PROJECT }}
+          region: ${{ vars.STACKRAMP_REGION || 'europe-west1' }}
