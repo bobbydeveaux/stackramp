@@ -197,6 +197,9 @@ jobs:
           # always_on: CPU stays allocated between requests (work outside a
           # request, long-lived sockets) and one instance is always up.
           MIN_INSTANCES="${{ inputs.min_instances }}"
+          # Only prod keeps warm instances unless the service must stay up
+          # (always_on, below).
+          [ "${{ inputs.environment }}" != "prod" ] && MIN_INSTANCES=0
           CPU_FLAG="--cpu-throttling"
           if [ "${{ inputs.always_on }}" = "true" ]; then
             CPU_FLAG="--no-cpu-throttling"
