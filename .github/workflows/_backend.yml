@@ -260,6 +260,12 @@ jobs:
             SECRET_REFS="${SECRET_REFS:+$SECRET_REFS,}DATABASE_URL=${{ inputs.database_secret_name }}:latest"
           fi
 
+          # Only prod keeps warm instances: every other environment scales to
+          # zero whatever min_instances says (Bobby, 10 Nov 2026: no paying to
+          # keep dev warm).
+          MIN_INSTANCES="${{ inputs.min_instances }}"
+          [ "${{ inputs.environment }}" != "prod" ] && MIN_INSTANCES=0
+
           # ── Build deploy flags ───────────────────────────────────────────────
           DEPLOY_FLAGS=(
             --image="$IMAGE"
@@ -269,7 +275,7 @@ jobs:
             --set-env-vars="${ENV_VARS}"
             --memory="${{ inputs.memory }}"
             --cpu="${{ inputs.cpu }}"
-            --min-instances=${{ inputs.min_instances }}
+            --min-instances="$MIN_INSTANCES"
             --max-instances=${{ inputs.max_instances }}
             --timeout=300
             --cpu-throttling
