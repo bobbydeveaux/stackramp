@@ -65,6 +65,11 @@ on:
         type: boolean
         required: false
         default: false
+      vpc_egress:
+        description: "With a VPC connector: all-traffic (everything leaves through the VPC) or private-ranges-only (only private addresses do; the rest goes straight to the internet)."
+        type: string
+        required: false
+        default: "all-traffic"
       timeout:
         description: "Request timeout in seconds (Cloud Run allows up to 3600)."
         type: number
@@ -240,7 +245,17 @@ jobs:
             # any this service still has (see the platform-secrets action).
             DEPLOY_FLAGS+=(--clear-secrets)
           fi
-          [ -n "${{ inputs.vpc_connector }}" ] && DEPLOY_FLAGS+=(--vpc-connector="${{ inputs.vpc_connector }}" --vpc-egress=all-traffic)
+          # vpc_egress: all-traffic sends everything through the VPC, which has
+          # no route to the internet unless the project runs a NAT.
+          # private-ranges-only keeps the database and other private addresses
+          # on the VPC and lets the service call the internet directly.
+          VPC_EGRESS="${{ inputs.vpc_egress }}"
+          case "$VPC_EGRESS" in
+            ""|all-traffic) VPC_EGRESS="all-traffic" ;;
+            private-ranges-only) ;;
+            *) echo "::error::vpc_egress must be all-traffic or private-ranges-only, not '$VPC_EGRESS'"; exit 1 ;;
+          esac
+          [ -n "${{ inputs.vpc_connector }}" ] && DEPLOY_FLAGS+=(--vpc-connector="${{ inputs.vpc_connector }}" --vpc-egress="$VPC_EGRESS")
           [ -n "${{ inputs.cloudsql_connection_name }}" ] && DEPLOY_FLAGS+=(--add-cloudsql-instances="${{ inputs.cloudsql_connection_name }}")
 
           gcloud run deploy "$SERVICE_NAME" "${DEPLOY_FLAGS[@]}"
