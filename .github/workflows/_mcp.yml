@@ -65,6 +65,11 @@ on:
         type: boolean
         required: false
         default: false
+      run_as:
+        description: "Service account the service runs as. Empty: the project's default compute account, which every other service shares."
+        type: string
+        required: false
+        default: ""
       vpc_egress:
         description: "With a VPC connector: all-traffic (everything leaves through the VPC) or private-ranges-only (only private addresses do; the rest goes straight to the internet)."
         type: string
@@ -245,6 +250,10 @@ jobs:
             # any this service still has (see the platform-secrets action).
             DEPLOY_FLAGS+=(--clear-secrets)
           fi
+          # run_as: an identity of the service's own. Without it the service
+          # runs as the default compute account, which every other service in
+          # the project shares, so nothing it calls can tell it from them.
+          [ -n "${{ inputs.run_as }}" ] && DEPLOY_FLAGS+=(--service-account="${{ inputs.run_as }}")
           # vpc_egress: all-traffic sends everything through the VPC, which has
           # no route to the internet unless the project runs a NAT.
           # private-ranges-only keeps the database and other private addresses

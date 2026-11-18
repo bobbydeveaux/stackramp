@@ -137,7 +137,17 @@ backends:
     max_instances: 1     # state lives in memory: never fan out
     timeout: 3600        # Cloud Run's ceiling; WebSocket clients reconnect at it
     vpc_egress: private-ranges-only   # call the internet directly; see below
+    run_as: my-app@my-project.iam.gserviceaccount.com   # an identity of its own; see below
 ```
+
+`run_as` gives a `backends[]` service a service account of its own. Without it
+the service runs as the project's default compute account, which every other
+service in the project shares: a service that checks a caller's ID token then
+cannot tell this one from the rest. You create the account and grant it what
+the service needs: read access to each secret it mounts (its `DATABASE_URL`
+secret and every platform secret that reaches it), `roles/cloudsql.client` if
+it has a database, and `roles/iam.serviceAccountUser` on the account for the
+platform's CI/CD account, so that a deploy may attach it.
 
 `vpc_egress` matters only where the platform has a VPC connector (a private-IP
 database). The default, `all-traffic`, sends everything a `backends[]` service
