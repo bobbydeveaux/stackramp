@@ -661,6 +661,7 @@ jobs:
       min_instances: ${{ matrix.svc.min_instances }}
       max_instances: ${{ matrix.svc.max_instances }}
       always_on: ${{ matrix.svc.always_on }}
+      vpc_egress: ${{ matrix.svc.vpc_egress }}
       timeout: ${{ matrix.svc.timeout }}
       vpc_connector: ${{ vars.STACKRAMP_VPC_CONNECTOR || '' }}
       cloudsql_connection_name: ${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }}
@@ -841,6 +842,7 @@ jobs:
       min_instances: ${{ matrix.svc.min_instances }}
       max_instances: ${{ matrix.svc.max_instances }}
       always_on: ${{ matrix.svc.always_on }}
+      vpc_egress: ${{ matrix.svc.vpc_egress }}
       timeout: ${{ matrix.svc.timeout }}
       vpc_connector: ${{ vars.STACKRAMP_VPC_CONNECTOR || '' }}
       cloudsql_connection_name: ${{ vars.STACKRAMP_CLOUDSQL_CONNECTION || '' }}

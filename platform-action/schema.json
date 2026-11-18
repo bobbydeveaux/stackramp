@@ -117,6 +117,7 @@
           "max_instances": { "type": "integer", "default": 10, "description": "Most Cloud Run instances. Set 1 for a service that keeps state in memory (a WebSocket hub, a stream fan-out)." },
           "always_on": { "type": "boolean", "default": false, "description": "CPU stays allocated between requests and at least one instance stays up. For services that hold long-lived connections or do work outside request handling. Costs an instance around the clock." },
           "timeout": { "type": "integer", "default": 300, "description": "Request timeout in seconds, up to Cloud Run's 3600. Long-lived WebSocket connections live at most this long before the client must reconnect." },
+          "vpc_egress": { "type": "string", "enum": ["all-traffic", "private-ranges-only"], "default": "all-traffic", "description": "Where the service's outbound traffic goes when the platform has a VPC connector. all-traffic: everything through the VPC, which reaches the internet only if the project runs a NAT. private-ranges-only: private addresses (the database) through the VPC, everything else straight to the internet. Set it for a service that must call a third party." },
           "access": {
             "type": "string",
             "enum": ["iap", "machine", "public", "internal"],

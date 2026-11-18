@@ -136,7 +136,16 @@ backends:
     always_on: true      # CPU allocated between requests, one instance always up
     max_instances: 1     # state lives in memory: never fan out
     timeout: 3600        # Cloud Run's ceiling; WebSocket clients reconnect at it
+    vpc_egress: private-ranges-only   # call the internet directly; see below
 ```
+
+`vpc_egress` matters only where the platform has a VPC connector (a private-IP
+database). The default, `all-traffic`, sends everything a `backends[]` service
+sends through the VPC, and a VPC with no NAT has no way out to the internet: a
+call to a third party times out. `private-ranges-only` keeps the database and
+other private addresses on the VPC and sends the rest straight out. Set it on
+a service that must call a third party. Leave the default on a service that
+must reach an `ingress: internal` service by its public address.
 
 `min_instances` was already accepted but not honoured on this path; it is now.
 Defaults are unchanged for everyone who does not set these: scale to zero, ten
