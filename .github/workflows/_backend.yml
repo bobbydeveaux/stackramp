@@ -84,7 +84,7 @@ on:
         type: string
         required: false
         default: "10"
-        description: "Maximum number of Cloud Run instances (backend.max_instances). Default 10."
+        description: "Maximum number of Cloud Run instances (backend.max_instances). The platform action resolves the default: 2 with a database, else 10."
       sso:
         type: string
         required: false
