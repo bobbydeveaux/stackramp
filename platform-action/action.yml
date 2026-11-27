@@ -39,7 +39,7 @@ outputs:
     description: "Minimum Cloud Run instances (default 0)"
     value: ${{ steps.parse.outputs.min_instances }}
   max_instances:
-    description: "Maximum Cloud Run instances for the primary backend (default 10)"
+    description: "Maximum Cloud Run instances for the primary backend (default 2 when the app has a database, else 10)"
     value: ${{ steps.parse.outputs.max_instances }}
   has_database:
     description: "Whether the app uses a database"
@@ -472,7 +472,7 @@ runs:
           ARR=$(jq -c --argjson dmx "$DEFAULT_MAX_INSTANCES" '[ .[]
             | .access = (if .access != "" then .access elif .sso then "iap" else "public" end) | del(.sso)
             | .max_instances = (if .max_instances != "" then .max_instances
-                elif (.min_instances | type) == "number" and .min_instances > $dmx then .min_instances
+                elif ((.min_instances | tonumber? // 0)) > $dmx then (.min_instances | tonumber)
                 else $dmx end) ]' <<<"$ARR")
           BACKENDS=$(jq -c '.[0] + .[1]' <<<"[$BACKENDS,$ARR]")
         fi
