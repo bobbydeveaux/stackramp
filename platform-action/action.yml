@@ -183,7 +183,20 @@ runs:
         BACKEND_DIR=$(yq '.backend.dir // "backend"' "$CONFIG")
         BACKEND_PORT=$(yq '.backend.port // 8080' "$CONFIG")
         MIN_INSTANCES=$(yq '.backend.min_instances // 0' "$CONFIG")
-        MAX_INSTANCES=$(yq '.backend.max_instances // 10' "$CONFIG")
+        DATABASE=$(yq '.database // false' "$CONFIG")
+        # Default max instances: 2 for an app with a database (every instance
+        # holds connections to the shared Cloud SQL instance), else 10. An
+        # explicit max_instances always wins; min_instances above the default
+        # raises it, so a warm-instance setting never fails validation.
+        DEFAULT_MAX_INSTANCES=10
+        [ "$DATABASE" != "false" ] && [ "$DATABASE" != "null" ] && DEFAULT_MAX_INSTANCES=2
+        MAX_INSTANCES=$(yq '.backend.max_instances // ""' "$CONFIG")
+        if [ -z "$MAX_INSTANCES" ]; then
+          MAX_INSTANCES=$DEFAULT_MAX_INSTANCES
+          if [[ "$MIN_INSTANCES" =~ ^[0-9]+$ ]] && [ "$MIN_INSTANCES" -gt "$MAX_INSTANCES" ]; then
+            MAX_INSTANCES=$MIN_INSTANCES
+          fi
+        fi
         # It reaches jq --argjson and gcloud --max-instances: reject anything
         # but a positive integer here, with a clear error, not mid-deploy.
         if ! [[ "$MAX_INSTANCES" =~ ^[1-9][0-9]*$ ]]; then
@@ -194,7 +207,6 @@ runs:
           echo "::error::backend.min_instances ($MIN_INSTANCES) must not exceed backend.max_instances ($MAX_INSTANCES)."
           exit 1
         fi
-        DATABASE=$(yq '.database // false' "$CONFIG")
         PROVIDER="${STACKRAMP_PROVIDER:-$(yq '.provider.cloud // "gcp"' "$CONFIG")}"
 
         # Domain: explicit in yaml > app_name.BASE_DOMAIN > empty
@@ -450,13 +462,18 @@ runs:
           ARR=$(yq -o=json -I=0 '[ .backends[] | {
             "name": (.name // ""), "language": (.language // "none"), "dir": (.dir // "backend"),
             "port": (.port // 8080), "memory": (.memory // "512Mi"), "cpu": (.cpu // "1"),
-            "min_instances": (.min_instances // 0), "max_instances": (.max_instances // 10),
+            "min_instances": (.min_instances // 0), "max_instances": (.max_instances // ""),
             "always_on": (.always_on // false), "timeout": (.timeout // 300),
             "vpc_egress": (.vpc_egress // "all-traffic"), "run_as": (.run_as // ""),
             "access": (.access // ""), "sso": (.sso // false),
             "service_accounts": ((.allowed_service_accounts // []) | join(";")) } ]' "$CONFIG")
-          # yq has no if/then/else — resolve the access default in jq.
-          ARR=$(jq -c '[ .[] | .access = (if .access != "" then .access elif .sso then "iap" else "public" end) | del(.sso) ]' <<<"$ARR")
+          # yq has no if/then/else — resolve the access and max_instances
+          # defaults in jq (max_instances: same database-aware default as above).
+          ARR=$(jq -c --argjson dmx "$DEFAULT_MAX_INSTANCES" '[ .[]
+            | .access = (if .access != "" then .access elif .sso then "iap" else "public" end) | del(.sso)
+            | .max_instances = (if .max_instances != "" then .max_instances
+                elif (.min_instances | type) == "number" and .min_instances > $dmx then .min_instances
+                else $dmx end) ]' <<<"$ARR")
           BACKENDS=$(jq -c '.[0] + .[1]' <<<"[$BACKENDS,$ARR]")
         fi
         # mcp sugar joins the informational `backends` view, but keeps its own

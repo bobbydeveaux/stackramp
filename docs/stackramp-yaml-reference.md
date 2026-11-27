@@ -217,9 +217,9 @@ CPU allocation for the backend service. Examples: `1`, `2`, `4`.
 | | |
 |---|---|
 | Type | `integer` |
-| Default | `10` |
+| Default | `2` when the app has a `database`, else `10` |
 
-The most Cloud Run instances the backend scales to. Lower it when every instance holds database connections, so instances × pool size stays within the database's connection limit (for example 3 instances × 5 connections = 15 on a small shared instance). Entries in `backends:` take the same field.
+The most Cloud Run instances the backend scales to. With `database` set, the default is 2, because every instance holds connections to the shared Cloud SQL instance and a burst of traffic (a scanner walking every app, say) would otherwise open up to 10 instances' worth. Without a database it stays 10. An explicit value always wins, and a `min_instances` above the default raises it to match. Lower it when every instance holds database connections, so instances × pool size stays within the database's connection limit (for example 3 instances × 5 connections = 15 on a small shared instance). Entries in `backends:` take the same field.
 
 ---
 
